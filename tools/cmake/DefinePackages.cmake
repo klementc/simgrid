@@ -381,6 +381,8 @@ set(PLUGINS_SRC
   src/plugins/vm/VmHostExt.cpp
   src/plugins/vm/VmLiveMigration.cpp
   src/plugins/vm/VmLiveMigration.hpp
+        ### wifi energy plugin ###
+  src/plugins/link_energy_wifi.cpp
   )
 
 set(SIMIX_GENERATED_SRC   src/simix/popping_generated.cpp  )
