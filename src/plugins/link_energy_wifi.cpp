@@ -116,6 +116,7 @@ void sg_link_wifi_plugin_init()
           simgrid::kernel::resource::NetworkWifiLink* wifi_link = static_cast<simgrid::kernel::resource::NetworkWifiLink*>(link);
           XBT_DEBUG("going by wifi load:%f bandwidth:%f rate1:%f rate2:%f", wifi_link->get_load(),
                   wifi_link->get_bandwidth(),wifi_link->get_host_rate(host1), wifi_link->get_host_rate(host2));
+          link->get_iface()->extension<LinkEnergyWifi>()->update(action);
         }else{
           XBT_DEBUG("going by non wifi %s usage:%f started:%lf state:%d BW:%f latency:%f", link->get_cname(),
                    link->get_iface()->get_usage(), action.get_start_time(), action.get_state(),
