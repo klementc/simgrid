@@ -58,12 +58,14 @@ namespace simgrid {
           double duration = surf_get_clock()-prev_update_;
           prev_update_ = surf_get_clock();
 
+          simgrid::kernel::resource::NetworkWifiLink* wifi_link = static_cast<simgrid::kernel::resource::NetworkWifiLink*>(link_->get_impl());
+          wifi_link->get_nb_hosts_on_link();
           // what is the cost?
           // 1Tx 1Rx from the AP
           // 1Tx from sender
           // 1Rx for receiver
           // ??
-          eTot_ += (2*pTx_ + 2*pRx_)*duration*(link_->get_usage()/link_->get_bandwidth()); // just as an illustration, not true at all
+          eTot_ += pIdle_*duration*wifi_link->get_nb_hosts_on_link() + (2*(pTx_-pIdle_) + (2*pRx_-pIdle_))*duration*(link_->get_usage()/link_->get_bandwidth()); // just as an illustration, not true at all
         }
 
 

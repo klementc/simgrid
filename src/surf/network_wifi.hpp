@@ -26,6 +26,8 @@ class NetworkWifiLink : public LinkImpl {
   /** @brief A link can have several bandwith attach to it (mostly use by wifi model) */
   std::vector<Metric> bandwidths_;
 
+  int nb_hosts_on_link_{0};
+
 public:
   NetworkWifiLink(NetworkCm02Model* model, const std::string& name, std::vector<double> bandwidths,
                   lmm::System* system);
@@ -38,6 +40,8 @@ public:
   void apply_event(kernel::profile::Event*, double) override { THROW_UNIMPLEMENTED; }
   void set_bandwidth(double) override { THROW_UNIMPLEMENTED; }
   void set_latency(double) override { THROW_UNIMPLEMENTED; }
+
+  inline int get_nb_hosts_on_link(){return nb_hosts_on_link_;}
 };
 
 } // namespace resource

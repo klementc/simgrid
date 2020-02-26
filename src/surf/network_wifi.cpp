@@ -29,6 +29,10 @@ NetworkWifiLink::NetworkWifiLink(NetworkCm02Model* model, const std::string& nam
 
 void NetworkWifiLink::set_host_rate(const s4u::Host* host, int rate_level)
 {
+  // crappy code for counting the number of hosts for energy model, warning: don't set twice the rate :,)
+  nb_hosts_on_link_++;
+  XBT_INFO("%d hosts on link", nb_hosts_on_link_);
+  //
   auto insert_done = host_rates_.insert(std::make_pair(host->get_name(), rate_level));
   if (insert_done.second == false)
     insert_done.first->second = rate_level;
