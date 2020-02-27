@@ -32,6 +32,7 @@ namespace simgrid {
 
             void update(/*simgrid::kernel::resource::NetworkAction const&*/);
             inline double getConsumedEnergy(void){return eTot_;}
+            
 
         private:
             s4u::Link* link_{};
@@ -41,7 +42,7 @@ namespace simgrid {
 
             // Same values as ns3:
             // https://www.nsnam.org/docs/release/3.30/doxygen/classns3_1_1_wifi_radio_energy_model.html#details
-            double pIdle_  {0.82};
+	    double pIdle_  {0.82};
             double pTx_    {1.14};
             double pRx_    {0.94};
             double pSleep_ {0.10};
@@ -65,7 +66,9 @@ namespace simgrid {
           // 1Tx from sender
           // 1Rx for receiver
           // ??
-          eTot_ += pIdle_*duration*wifi_link->get_nb_hosts_on_link() + (2*(pTx_-pIdle_) + (2*pRx_-pIdle_))*duration*(link_->get_usage()/link_->get_bandwidth()); // just as an illustration, not true at all
+          eTot_ += pIdle_*duration*(1 + wifi_link->get_nb_hosts_on_link()) +
+	    (2*(pTx_-pIdle_) + (2*pRx_-pIdle_)) * duration *
+	    (link_->get_usage()/link_->get_bandwidth()); // just as an illustration
         }
 
 
