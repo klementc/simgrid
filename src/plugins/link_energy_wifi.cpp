@@ -8,6 +8,9 @@
 #include "simgrid/s4u/Link.hpp"
 #include "src/surf/network_wifi.hpp"
 
+#include <boost/algorithm/string/classification.hpp>
+#include <boost/algorithm/string/split.hpp>
+
 
 SIMGRID_REGISTER_PLUGIN(link_energy_wifi, "Energy wifi test", &sg_link_wifi_plugin_init);
 
@@ -32,7 +35,11 @@ namespace simgrid {
 
             void update(/*simgrid::kernel::resource::NetworkAction const&*/);
             inline double getConsumedEnergy(void){return eTot_;}
-            
+	          void setpIdle(double value) { pIdle_=value;}
+	          void setpTx(double value) {pTx_=value;}
+  	        void setpRx(double value) {pRx_=value;}
+	          void setpSleep(double value) {pSleep_=value;}
+            void init_watts_range_list();
 
         private:
             s4u::Link* link_{};
@@ -42,20 +49,25 @@ namespace simgrid {
 
             // Same values as ns3:
             // https://www.nsnam.org/docs/release/3.30/doxygen/classns3_1_1_wifi_radio_energy_model.html#details
-	    double pIdle_  {0.82};
+        	  double pIdle_  {0.82};
             double pTx_    {1.14};
             double pRx_    {0.94};
             double pSleep_ {0.10};
 
+            bool valuesInit_ {false};
         };
 
         xbt::Extension<s4u::Link, LinkEnergyWifi> LinkEnergyWifi::EXTENSION_ID;
 
         void LinkEnergyWifi::update(/*simgrid::kernel::resource::NetworkAction const& action*/)
         {
+          init_watts_range_list();
           XBT_DEBUG("state updated for link %s, usage: %f, lat:%f"/*, state:%d, started: %f finished: %f"*/,
                   link_->get_cname(),link_->get_usage(),link_->get_latency()
                   /*action.get_state(),action.get_start_time(),action.get_finish_time()*/);
+
+          //init_watts_range_list();
+
           double duration = surf_get_clock()-prev_update_;
           prev_update_ = surf_get_clock();
 
@@ -70,6 +82,54 @@ namespace simgrid {
 	    (2*(pTx_-pIdle_) + (2*pRx_-pIdle_)) * duration *
 	    (link_->get_usage()/link_->get_bandwidth()); // just as an illustration
         }
+
+        void LinkEnergyWifi::init_watts_range_list()
+        {
+          if(valuesInit_)
+            return;
+          valuesInit_=true;
+          const char* all_power_values_str = this->link_->get_property("wifi_watt_values");
+          if (all_power_values_str == nullptr)
+            return;
+
+          std::vector<std::string> all_power_values;
+          boost::split(all_power_values, all_power_values_str, boost::is_any_of(","));
+
+          for (auto current_power_values_str : all_power_values) {
+            /* retrieve the power values associated */
+            std::vector<std::string> current_power_values;
+            boost::split(current_power_values, current_power_values_str, boost::is_any_of(":"));
+            xbt_assert(current_power_values.size() == 4,
+                       "Power properties incorrectly defined - could not retrieve idle, Tx, Rx, Sleep power values for link %s",
+                       this->link_->get_cname());
+
+            /* min_power corresponds to the idle power (link load = 0) */
+            /* max_power is the power consumed at 100% link load       */
+            try {
+              pSleep_ = std::stod(current_power_values.at(3));
+            } catch (const std::invalid_argument&) {
+              throw std::invalid_argument(std::string("Invalid idle power value for link ") + this->link_->get_cname());
+            }
+            try {
+              pRx_ = std::stod(current_power_values.at(2));
+            } catch (const std::invalid_argument&) {
+              throw std::invalid_argument(std::string("Invalid idle power value for link ") + this->link_->get_cname());
+            }
+            try {
+              pTx_ = std::stod(current_power_values.at(1));
+            } catch (const std::invalid_argument&) {
+              throw std::invalid_argument(std::string("Invalid idle power value for link ") + this->link_->get_cname());
+            }
+            try {
+              pIdle_ = std::stod(current_power_values.at(0));
+            } catch (const std::invalid_argument&) {
+              throw std::invalid_argument(std::string("Invalid busy power value for link ") + this->link_->get_cname());
+            }
+
+            XBT_DEBUG("Values initialized with: pSleep=%f pIdle=%f pTx=%f pRx=%f", pSleep_, pIdle_, pTx_, pRx_);
+          }
+        }
+
 
 
     } // namespace plugin
@@ -88,7 +148,8 @@ void sg_link_wifi_plugin_init()
   simgrid::s4u::Link::on_creation.connect([](simgrid::s4u::Link& link){
       if(link.get_sharing_policy() == simgrid::s4u::Link::SharingPolicy::WIFI){
         XBT_DEBUG("Wifi Link created: %s", link.get_cname());
-        link.extension_set(new LinkEnergyWifi(&link));
+	      LinkEnergyWifi* plugin = new LinkEnergyWifi(&link);
+        link.extension_set(plugin);
       }else{
         XBT_DEBUG("Not Wifi Link: %s", link.get_cname());
       }
