@@ -13,10 +13,11 @@
 
 XBT_LOG_NEW_DEFAULT_CATEGORY(actor_migrate, "Messages specific for this example");
 
-static void worker(XBT_ATTRIB_UNUSED int argc, XBT_ATTRIB_UNUSED char* argv[])
+static void worker(int argc, char* argv[])
 {
+  xbt_assert(argc > 2);
   sg_host_t first  = sg_host_by_name(argv[1]);
-  sg_host_t second = sg_host_by_name(argv[2]);
+  const_sg_host_t second = sg_host_by_name(argv[2]);
 
   double flopAmount = sg_host_speed(first) * 5 + sg_host_speed(second) * 5;
 
@@ -24,7 +25,7 @@ static void worker(XBT_ATTRIB_UNUSED int argc, XBT_ATTRIB_UNUSED char* argv[])
            argv[2]);
 
   sg_actor_set_host(sg_actor_self(), first);
-  sg_actor_self_execute(flopAmount);
+  sg_actor_execute(flopAmount);
 
   XBT_INFO("I wake up on %s. Let's suspend a bit", sg_host_get_name(sg_host_self()));
 
@@ -41,16 +42,15 @@ static void monitor(XBT_ATTRIB_UNUSED int argc, XBT_ATTRIB_UNUSED char* argv[])
 
   int actor_argc           = 3;
   const char* actor_argv[] = {"worker", "Boivin", "Jacquelin", NULL};
-  sg_actor_t actor         = sg_actor_init("worker", sg_host_by_name("Fafard"));
-  sg_actor_start(actor, worker, actor_argc, actor_argv);
+  sg_actor_t actor         = sg_actor_create("worker", sg_host_by_name("Fafard"), worker, actor_argc, actor_argv);
 
   sg_actor_sleep_for(5);
 
-  XBT_INFO("After 5 seconds, move the process to %s", sg_host_get_name(jacquelin));
+  XBT_INFO("After 5 seconds, move the actor to %s", sg_host_get_name(jacquelin));
   sg_actor_set_host(actor, jacquelin);
 
   sg_actor_sleep_until(15);
-  XBT_INFO("At t=15, move the process to %s and resume it.", sg_host_get_name(fafard));
+  XBT_INFO("At t=15, move the actor to %s and resume it.", sg_host_get_name(fafard));
   sg_actor_set_host(actor, fafard);
   sg_actor_resume(actor);
 }
@@ -61,9 +61,7 @@ int main(int argc, char* argv[])
   xbt_assert(argc == 2, "Usage: %s platform_file\n\tExample: %s msg_platform.xml\n", argv[0], argv[0]);
 
   simgrid_load_platform(argv[1]); /* - Load the platform description */
-  /* - Create and deploy the emigrant and policeman processes */
-  sg_actor_t actor = sg_actor_init("monitor", sg_host_by_name("Boivin"));
-  sg_actor_start(actor, monitor, 0, NULL);
+  sg_actor_create("monitor", sg_host_by_name("Boivin"), monitor, 0, NULL);
 
   simgrid_run();
 

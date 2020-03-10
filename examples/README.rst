@@ -82,13 +82,18 @@ Starting and Stoping Actors
           - the end of any actor: :cpp:member:`simgrid::s4u::Actor::on_termination()`
           - the destruction of any actor: :cpp:member:`simgrid::s4u::Actor::on_destruction()`
 
+       .. example-tab:: examples/c/actor-exiting/actor-exiting.c
+
+          This example shows how to attach a callback to the end of a specific actor with 
+          :cpp:func:`sg_actor_on_exit()`.
+
   - **Kill actors:**
     Actors can forcefully stop other actors.
-    
+
     .. tabs::
-    
+
        .. example-tab:: examples/s4u/actor-kill/s4u-actor-kill.cpp
-       
+
           See also :cpp:func:`void simgrid::s4u::Actor::kill(void)`, :cpp:func:`void simgrid::s4u::Actor::kill_all()`,
           :cpp:func:`simgrid::s4u::this_actor::exit`, :cpp:func:`simgrid::s4u::this_actor::on_exit`.
 
@@ -96,7 +101,7 @@ Starting and Stoping Actors
 
           See also :py:func:`simgrid.Actor.kill`, :py:func:`simgrid.Actor.kill_all`, :py:func:`simgrid.this_actor.exit`,
           :py:func:`simgrid.this_actor.on_exit`.
-	  
+
        .. example-tab:: examples/c/actor-kill/actor-kill.c
 
           See also :cpp:func:`sg_actor_kill`, :cpp:func:`sg_actor_kill_all`, :cpp:func:`sg_actor_exit`, :cpp:func:`sg_actor_on_exit`.
@@ -113,6 +118,10 @@ Starting and Stoping Actors
        .. example-tab:: examples/s4u/actor-lifetime/s4u-actor-lifetime_d.xml
 
           This demonstrates the ``start_time`` and ``kill_time`` attribute of the :ref:`pf_tag_actor` tag.
+
+       .. example-tab:: examples/c/actor-lifetime/actor-lifetime.c
+
+          This file is not really interesting: the important matter is in the XML file.
 
   - **Daemonize actors:**
     Some actors may be intended to simulate daemons that run in background. This example show how to transform a regular
@@ -132,6 +141,15 @@ Starting and Stoping Actors
 
           See also :cpp:func:`sg_actor_daemonize` and :cpp:func:`sg_actor_is_daemon`.
 
+  - **Specify the stack size to use**
+    The stack size can be specified by default on the command line,
+    globally by changing the configuration with :cpp:func:`simgrid::s4u::Engine::set_config(std::string)`, 
+    or for a specific actor using :cpp:func:`simgrid::s4u::Actor::set_stacksize` before its start.
+    
+    .. tabs::
+
+       .. example-tab:: examples/s4u/actor-stacksize/s4u-actor-stacksize.cpp
+
 Inter-Actors Interactions
 -------------------------
 
@@ -147,27 +165,36 @@ synchronization objects <s4u_ex_IPC>`.
        .. example-tab:: examples/s4u/actor-suspend/s4u-actor-suspend.cpp
 
           See also :cpp:func:`simgrid::s4u::this_actor::suspend()`,
-          :cpp:func:`simgrid::s4u::Actor::suspend()`, :cpp:func:`simgrid::s4u::Actor::resume()` and
+          :cpp:func:`simgrid::s4u::Actor::suspend()`, :cpp:func:`simgrid::s4u::Actor::resume()`, and
           :cpp:func:`simgrid::s4u::Actor::is_suspended()`.
 
        .. example-tab:: examples/python/actor-suspend/actor-suspend.py
 
           See also :py:func:`simgrid.this_actor.suspend()`,
-          :py:func:`simgrid.Actor.suspend()`, :py:func:`simgrid.Actor.resume()` and
+          :py:func:`simgrid.Actor.suspend()`, :py:func:`simgrid.Actor.resume()`, and
           :py:func:`simgrid.Actor.is_suspended()`.
 
+       .. example-tab:: examples/c/actor-suspend/actor-suspend.c
+
+          See also :cpp:func:`sg_actor_suspend()`, :cpp:func:`sg_actor_resume()`, and 
+          :cpp:func:`sg_actor_is_suspended()`.
+
   - **Migrating Actors:**
-    Actors can move or be moved from a host to another very easily.
+    Actors can move or be moved from a host to another very easily. It amount to setting them on a new host.
 
     .. tabs::
 
        .. example-tab:: examples/s4u/actor-migrate/s4u-actor-migrate.cpp
 
-          See also :cpp:func:`simgrid::s4u::this_actor::migrate()` and :cpp:func:`simgrid::s4u::Actor::migrate()`.
+          See also :cpp:func:`simgrid::s4u::this_actor::set_host()` and :cpp:func:`simgrid::s4u::Actor::set_host()`.
 
        .. example-tab:: examples/python/actor-migrate/actor-migrate.py
 
-          See also :py:func:`simgrid.this_actor.migrate()` and :py:func:`simgrid.Actor.migrate()`.
+          See also :py:func:`simgrid.this_actor.set_host()` and :py:func:`simgrid.Actor.set_host()`.
+
+       .. example-tab:: examples/c/actor-migrate/actor-migrate.c
+
+          See also :cpp:func:`sg_actor_set_host()`.
 
   - **Waiting for the termination of an actor:** (joining on it)
     You can block the current actor until the end of another actor.
@@ -200,6 +227,10 @@ synchronization objects <s4u_ex_IPC>`.
        .. example-tab:: examples/python/actor-yield/actor-yield.py
 
           See also :py:func:`simgrid.this_actor.yield_()`.
+
+       .. example-tab:: examples/c/actor-yield/actor-yield.c
+
+          See also :cpp:func:`sg_actor_yield()`.
 
 Traces Replay as a Workload
 ---------------------------
@@ -260,6 +291,10 @@ Communications on the Network
 
          See also :py:func:`simgrid.Mailbox.put_async()` and :py:func:`simgrid.Comm.wait()`.
 
+      .. example-tab:: examples/c/async-wait/async-wait.c
+
+         See also :cpp:func:`sg_mailbox_put_async()` and :cpp:func:`sg_comm__wait()`.
+
  - **Waiting for all communications in a set:**
    The ``wait_all()`` function is useful when you want to block until
    all activities in a given set have completed. 
@@ -273,6 +308,10 @@ Communications on the Network
       .. example-tab:: examples/python/async-waitall/async-waitall.py
 
          See also :py:func:`simgrid.Comm.wait_all()`.
+
+      .. example-tab:: examples/c/async-waitall/async-waitall.c
+
+         See also :cpp:func:`sg_comm_wait_all()`.
 
  - **Waiting for the first completed communication in a set:**
    The ``wait_any()`` function is useful
@@ -316,6 +355,11 @@ Executions on the CPU
 
           See also :py:func:`simgrid.this_actor.execute()`.
 
+       .. example-tab:: examples/c/exec-basic/exec-basic.c
+
+          See also :cpp:func:`void sg_actor_execute(double)`
+          and :cpp:func:`void sg_actor_execute_with_priority(double, double)`.
+
   - **Asynchronous execution:**
     You can start asynchronous executions, just like you would fire
     background threads.
@@ -356,6 +400,10 @@ Executions on the CPU
 
           See also :py:func:`simgrid.Exec.set_host()`.
 
+       .. example-tab:: examples/c/exec-remote/exec-remote.c
+
+          See also :cpp:func:`sg_exec_set_host()`.
+
   - **Parallel executions:**
     These objects are convenient abstractions of parallel
     computational kernels that span over several machines, such as a
@@ -377,6 +425,10 @@ Executions on the CPU
        .. example-tab:: examples/s4u/exec-dvfs/s4u-exec-dvfs.cpp
 
           See also :cpp:func:`simgrid::s4u::Host::get_pstate_speed` and :cpp:func:`simgrid::s4u::Host::set_pstate`.
+
+       .. example-tab:: examples/c/exec-dvfs/exec-dvfs.c
+
+          See also :cpp:func:`sg_host_get_pstate_speed` and :cpp:func:`sg_host_set_pstate`.
 
        .. example-tab:: examples/python/exec-dvfs/exec-dvfs.py
 
@@ -400,6 +452,8 @@ write actions on the disk resources.
     .. tabs::
 
        .. example-tab:: examples/s4u/io-disk-raw/s4u-io-disk-raw.cpp
+
+       .. example-tab:: examples/c/io-disk-raw/io-disk-raw.c
 
        .. example-tab:: examples/platforms/hosts_with_disks.xml
 
@@ -425,6 +479,8 @@ result in short reads and short write, as in reality.
     .. tabs::
 
        .. example-tab:: examples/s4u/io-file-remote/s4u-io-file-remote.cpp
+
+       .. example-tab:: examples/c/io-file-remote/io-file-remote.c
 
 .. _s4u_ex_IPC:
 
@@ -565,6 +621,8 @@ Energy Simulation
 
        .. example-tab:: examples/s4u/energy-exec/s4u-energy-exec.cpp
 
+       .. example-tab:: examples/c/energy-exec/energy-exec.c
+
   - **Consumption due to the network:**
     This example shows how to retrieve and display the energy consumed
     by the network during communications.
@@ -619,6 +677,8 @@ than the previous examples.
 
        .. example-tab:: examples/s4u/app-pingpong/s4u-app-pingpong.cpp
 
+       .. example-tab:: examples/c/app-pingpong/app-pingpong.c
+
   - **Token ring:**
     Shows how to implement a classical communication pattern, where a
     token is exchanged along a ring to reach every participant.
@@ -626,6 +686,8 @@ than the previous examples.
     .. tabs::
 
        .. example-tab:: examples/s4u/app-token-ring/s4u-app-token-ring.cpp
+
+       .. example-tab:: examples/c/app-token-ring/app-token-ring.c
 
   - **Master Workers:**
     Another good old example, where one Master process has a bunch of task to dispatch to a set of several Worker 
@@ -672,6 +734,17 @@ Data diffusion
     .. tabs::
 
        .. example-tab:: examples/s4u/app-chainsend/s4u-app-chainsend.cpp
+
+       .. group-tab:: C
+
+          .. showfile:: examples/c/app-chainsend/chainsend.c
+             :language: c
+
+          .. showfile:: examples/c/app-chainsend/broadcaster.c
+             :language: c
+
+          .. showfile:: examples/c/app-chainsend/peer.c
+             :language: c
 
 Distributed Hash Tables (DHT)
 -----------------------------
@@ -721,12 +794,16 @@ Simulating Clouds
 
        .. example-tab:: examples/s4u/cloud-simple/s4u-cloud-simple.cpp
 
+       .. example-tab:: examples/c/cloud-simple/cloud-simple.c
+
   - **Migrating VMs**
     This example shows how to migrate VMs between PMs.
 
     .. tabs::
 
        .. example-tab:: examples/s4u/cloud-migration/s4u-cloud-migration.cpp
+
+       .. example-tab:: examples/c/cloud-migration/cloud-migration.c
 
 =======================
 Model-Checking Examples

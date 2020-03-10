@@ -293,4 +293,14 @@ typedef long long sg_offset_t;
 /** Actor's ID, just like the classical processes' have PID in UNIX */
 typedef long aid_t;
 
+typedef enum {
+  SG_OK,
+  SG_ERROR_CANCELED,
+  SG_ERROR_TIMEOUT,
+  SG_ERROR_HOST,
+  SG_ERROR_NETWORK,
+  SG_ERROR_STORAGE,
+  SG_ERROR_VM
+} sg_error_t;
+
 #endif /* SIMGRID_TYPES_H */

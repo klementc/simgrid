@@ -36,7 +36,7 @@ static void actor_fun(XBT_ATTRIB_UNUSED int argc, XBT_ATTRIB_UNUSED char* argv[]
   // Register a lambda function to be executed once it stops
   sg_actor_on_exit(&my_on_exit, NULL);
 
-  sg_actor_self_execute(1e9);
+  sg_actor_execute(1e9);
 }
 
 int main(int argc, char* argv[])
@@ -46,8 +46,7 @@ int main(int argc, char* argv[])
 
   simgrid_load_platform(argv[1]); /* - Load the platform description */
 
-  sg_actor_t actor = sg_actor_init("A", sg_host_by_name("Tremblay"));
-  sg_actor_start(actor, actor_fun, 0, NULL);
+  sg_actor_create("A", sg_host_by_name("Tremblay"), actor_fun, 0, NULL);
 
   simgrid_run();
 

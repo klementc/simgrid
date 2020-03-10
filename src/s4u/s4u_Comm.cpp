@@ -255,15 +255,55 @@ Actor* Comm::get_sender() const
 } // namespace s4u
 } // namespace simgrid
 /* **************************** Public C interface *************************** */
+int sg_comm_test(sg_comm_t comm)
+{
+  bool finished = comm->test();
+  if (finished)
+    comm->unref();
+  return finished;
+}
+
+sg_error_t sg_comm_wait(sg_comm_t comm)
+{
+  sg_error_t status = SG_OK;
+
+  simgrid::s4u::CommPtr s4u_comm(comm, false);
+  try {
+    s4u_comm->wait_for(-1);
+  } catch (const simgrid::TimeoutException&) {
+    status = SG_ERROR_TIMEOUT;
+  } catch (const simgrid::CancelException&) {
+    status = SG_ERROR_CANCELED;
+  } catch (const simgrid::NetworkFailureException&) {
+    status = SG_ERROR_NETWORK;
+  }
+  return status;
+}
+
+sg_error_t sg_comm_wait_for(sg_comm_t comm, double timeout)
+{
+  sg_error_t status = SG_OK;
+
+  simgrid::s4u::CommPtr s4u_comm(comm, false);
+  try {
+    s4u_comm->wait_for(timeout);
+  } catch (const simgrid::TimeoutException&) {
+    status = SG_ERROR_TIMEOUT;
+  } catch (const simgrid::CancelException&) {
+    status = SG_ERROR_CANCELED;
+  } catch (const simgrid::NetworkFailureException&) {
+    status = SG_ERROR_NETWORK;
+  }
+  return status;
+}
+
 void sg_comm_wait_all(sg_comm_t* comms, size_t count)
 {
   std::vector<simgrid::s4u::CommPtr> s4u_comms;
   for (unsigned int i = 0; i < count; i++)
-    s4u_comms.emplace_back(comms[i]);
+    s4u_comms.emplace_back(comms[i], false);
 
   simgrid::s4u::Comm::wait_all(&s4u_comms);
-  for (unsigned int i = 0; i < count; i++)
-    s4u_comms[i]->unref();
 }
 
 int sg_comm_wait_any(sg_comm_t* comms, size_t count)
@@ -274,11 +314,13 @@ int sg_comm_wait_any(sg_comm_t* comms, size_t count)
 int sg_comm_wait_any_for(sg_comm_t* comms, size_t count, double timeout)
 {
   std::vector<simgrid::s4u::CommPtr> s4u_comms;
-  for (unsigned int i = 0; i < count; i++) {
-    s4u_comms.emplace_back(comms[i]);
-  }
+  for (unsigned int i = 0; i < count; i++)
+    s4u_comms.emplace_back(comms[i], false);
+
   int pos = simgrid::s4u::Comm::wait_any_for(&s4u_comms, timeout);
-  if (pos != -1)
-    s4u_comms[pos]->unref();
+  for (unsigned i = 0; i < count; i++) {
+    if (pos != -1 && static_cast<unsigned>(pos) != i)
+      s4u_comms[i]->add_ref();
+  }
   return pos;
 }

@@ -47,15 +47,16 @@ int get_maxpid()
 
 ActorImpl* ActorImpl::self()
 {
-  context::Context* self_context = context::Context::self();
+  const context::Context* self_context = context::Context::self();
 
   return (self_context != nullptr) ? self_context->get_actor() : nullptr;
 }
 
 ActorImpl::ActorImpl(xbt::string name, s4u::Host* host) : host_(host), name_(std::move(name)), piface_(this)
 {
-  pid_           = maxpid++;
+  pid_            = maxpid++;
   simcall.issuer_ = this;
+  stacksize_      = smx_context_stack_size;
 }
 
 ActorImpl::~ActorImpl()
@@ -176,11 +177,16 @@ void ActorImpl::cleanup()
 
   XBT_DEBUG("Cleanup actor %s (%p), waiting synchro %p", get_cname(), this, waiting_synchro.get());
 
-  /* Unregister from the kill timer if any */
+  /* Unregister associated timers if any */
   if (kill_timer != nullptr) {
     kill_timer->remove();
     kill_timer = nullptr;
   }
+  if (simcall.timeout_cb_) {
+    simcall.timeout_cb_->remove();
+    simcall.timeout_cb_ = nullptr;
+  }
+
   cleanup_from_simix();
 
   context_->set_wannadie(false); // don't let the simcall's yield() do a Context::stop(), to avoid infinite loops
@@ -235,9 +241,12 @@ void ActorImpl::kill(ActorImpl* actor)
 
   actor->exit();
 
-  if (std::find(begin(simix_global->actors_to_run), end(simix_global->actors_to_run), actor) ==
-          end(simix_global->actors_to_run) &&
-      actor != this) {
+  if (actor == this) {
+    XBT_DEBUG("Go on, this is a suicide,");
+  } else if (std::find(begin(simix_global->actors_to_run), end(simix_global->actors_to_run), actor) !=
+             end(simix_global->actors_to_run)) {
+    XBT_DEBUG("Actor %s is already in the to_run list", actor->get_cname());
+  } else {
     XBT_DEBUG("Inserting %s in the to_run list", actor->get_cname());
     simix_global->actors_to_run.push_back(actor);
   }
@@ -433,6 +442,7 @@ void ActorImpl::simcall_answer()
   if (this != simix_global->maestro_) {
     XBT_DEBUG("Answer simcall %s (%d) issued by %s (%p)", SIMIX_simcall_name(simcall.call_), (int)simcall.call_,
               get_cname(), this);
+    xbt_assert(simcall.call_ != SIMCALL_NONE);
     simcall.call_ = SIMCALL_NONE;
     xbt_assert(not XBT_LOG_ISENABLED(simix_process, xbt_log_priority_debug) ||
                    std::find(begin(simix_global->actors_to_run), end(simix_global->actors_to_run), this) ==

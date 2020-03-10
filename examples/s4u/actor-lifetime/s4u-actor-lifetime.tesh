@@ -11,4 +11,3 @@ $ ${bindir:=.}/s4u-actor-lifetime ${platfdir}/cluster_backbone.xml s4u-actor-lif
 > [ 10.000000] (1:sleeper@node-0.simgrid.org) Exiting now (done sleeping or got killed).
 > [ 12.000000] (3:sleeper@node-0.simgrid.org) Done sleeping.
 > [ 12.000000] (3:sleeper@node-0.simgrid.org) Exiting now (done sleeping or got killed).
-

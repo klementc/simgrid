@@ -28,7 +28,8 @@ if(enable_compile_warnings)
     # 191: type qualifier is meaningless on cast type
     # 597: entity-kind "entity" will not be called for implicit or explicit conversions
     # 2330: argument of type "type" is incompatible with parameter of type "type" (dropping qualifiers)
-    set(warnCFLAGS "${warnCFLAGS} -wd1418 -wd191 -wd2196 -wd3179 -ww597 -ww2330")
+    # 11003: no IR in object file xxxx; was the source file compiled with xxxx
+    set(warnCFLAGS "${warnCFLAGS} -diag-disable=1418,191,2196,3179 -diag-warning=2330,597,11003")
   endif()
 
   set(warnCXXFLAGS "${warnCFLAGS} -Wall -Wextra -Wunused -Wmissing-declarations -Wpointer-arith -Wchar-subscripts -Wcomment -Wformat -Wwrite-strings -Wno-unused-function -Wno-unused-parameter -Wno-strict-aliasing")
@@ -106,27 +107,25 @@ if(CMAKE_COMPILER_IS_GNUCC)
 endif()
 
 # Configure LTO
-# NOTE, cmake 3.0 has a INTERPROCEDURAL_OPTIMIZATION target
-#       property for this (http://www.cmake.org/cmake/help/v3.0/prop_tgt/INTERPROCEDURAL_OPTIMIZATION.html)
 if(enable_lto) # User wants LTO. Try if we can do that
   set(enable_lto OFF)
   if(enable_compile_optimizations
-      AND CMAKE_COMPILER_IS_GNUCC
       AND (NOT enable_model-checking))
-    # On windows, we need 4.8 or higher to enable lto because of http://gcc.gnu.org/bugzilla/show_bug.cgi?id=50293
-    #   We are experiencing assertion failures even with 4.8 on MinGW.
-    #   Push the support forward: will see if 4.9 works when we test it.
-    #
-    # On Linux, we got the following with GCC 4.8.4 on Centos and Ubuntu
-    #    lto1: internal compiler error: in output_die, at dwarf2out.c:8478
-    #    Please submit a full bug report, with preprocessed source if appropriate.
-    # So instead, we push the support forward
-
-    if ( (CMAKE_C_COMPILER_VERSION VERSION_GREATER "4.8.5")
+    if(CMAKE_VERSION VERSION_LESS "3.9")
+      if ( CMAKE_COMPILER_IS_GNUCC
+         AND (CMAKE_C_COMPILER_VERSION VERSION_GREATER "4.8.5")
          AND (LINKER_VERSION VERSION_GREATER "2.22"))
-      set(enable_lto ON)
+        set(enable_lto ON)
+      endif()
+    else()
+      include(CheckIPOSupported)
+      check_ipo_supported(RESULT ipo LANGUAGES C CXX)
+      if(ipo)
+        set(enable_lto ON)
+      endif()
     endif()
   endif()
+
   if(enable_lto)
     message(STATUS "LTO seems usable.")
   else()
@@ -144,8 +143,21 @@ else()
   message(STATUS "LTO disabled on the command line.")
 endif()
 if(enable_lto) # User wants LTO, and it seems usable. Go for it
-  set(optCFLAGS "${optCFLAGS} -flto ")
-  # See https://gcc.gnu.org/wiki/LinkTimeOptimizationFAQ#ar.2C_nm_and_ranlib:
+  set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
+  if(LTO_EXTRA_FLAG AND CMAKE_COMPILER_IS_GNUCC)
+    list(APPEND CMAKE_C_COMPILE_OPTIONS_IPO "-flto=${LTO_EXTRA_FLAG}")
+    list(APPEND CMAKE_CXX_COMPILE_OPTIONS_IPO "-flto=${LTO_EXTRA_FLAG}")
+  endif()
+
+  # Activate fat-lto-objects in case LD and gfortran differ too much.
+  # Only test with GNU as it's the only case I know (clang+gfortran+lld)
+  execute_process(COMMAND ${CMAKE_LINKER} -v OUTPUT_VARIABLE LINKER_ID ERROR_VARIABLE LINKER_ID)
+  string(REGEX MATCH "GNU" LINKER_ID "${LINKER_ID}")
+  if(${CMAKE_Fortran_COMPILER_ID} MATCHES "GNU"
+     AND NOT "${LINKER_ID}" MATCHES "GNU")
+       list(APPEND CMAKE_Fortran_COMPILE_OPTIONS_IPO "-ffat-lto-objects")
+  endif()
+
   # "Since version 4.9 gcc produces slim object files that only contain
   # the intermediate representation. In order to handle archives of
   # these objects you have to use the gcc wrappers:

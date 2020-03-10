@@ -682,6 +682,7 @@ set(headers_to_install
   include/simgrid/barrier.h
   include/simgrid/comm.h
   include/simgrid/engine.h
+  include/simgrid/exec.h
   include/simgrid/Exception.hpp
   include/simgrid/chrono.hpp
   include/simgrid/plugins/dvfs.h
@@ -1020,6 +1021,7 @@ set(CMAKEFILES_TXT
   examples/deprecated/simdag/CMakeLists.txt
 
   teshsuite/java/CMakeLists.txt
+  teshsuite/kernel/CMakeLists.txt
   teshsuite/lua/CMakeLists.txt
   teshsuite/mc/CMakeLists.txt
   teshsuite/msg/CMakeLists.txt
@@ -1171,7 +1173,6 @@ set(PLATFORMS_EXAMPLES
   examples/platforms/simulacrum_7_hosts.xml
   examples/platforms/storage/content/small_content.txt
   examples/platforms/storage/content/storage_content.txt
-  examples/platforms/storage/remote_io.xml
   examples/platforms/storage/storage.xml
   examples/platforms/small_platform.xml
   examples/platforms/small_platform.lua

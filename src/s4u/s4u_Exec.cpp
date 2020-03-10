@@ -3,6 +3,8 @@
 /* This program is free software; you can redistribute it and/or modify it
  * under the terms of the license (GNU LGPL) which comes with this package. */
 
+#include "simgrid/Exception.hpp"
+#include "simgrid/exec.h"
 #include "simgrid/s4u/Actor.hpp"
 #include "simgrid/s4u/Exec.hpp"
 #include "src/kernel/activity/ExecImpl.hpp"
@@ -209,3 +211,105 @@ double Exec::get_remaining_ratio() const
 
 } // namespace s4u
 } // namespace simgrid
+/* **************************** Public C interface *************************** */
+void sg_exec_set_bound(sg_exec_t exec, double bound)
+{
+  exec->set_bound(bound);
+}
+
+const char* sg_exec_get_name(const_sg_exec_t exec)
+{
+  return exec->get_cname();
+}
+
+void sg_exec_set_name(sg_exec_t exec, const char* name)
+{
+  exec->set_name(name);
+}
+
+void sg_exec_set_host(sg_exec_t exec, sg_host_t new_host)
+{
+  exec->set_host(new_host);
+}
+
+double sg_exec_get_remaining(const_sg_exec_t exec)
+{
+  return exec->get_remaining();
+}
+
+double sg_exec_get_remaining_ratio(const_sg_exec_t exec)
+{
+  return exec->get_remaining_ratio();
+}
+
+void sg_exec_start(sg_exec_t exec)
+{
+  exec->start();
+}
+
+void sg_exec_cancel(sg_exec_t exec)
+{
+  exec->cancel();
+  exec->unref();
+}
+
+int sg_exec_test(sg_exec_t exec)
+{
+  bool finished = exec->test();
+  if (finished)
+    exec->unref();
+  return finished;
+}
+
+sg_error_t sg_exec_wait(sg_exec_t exec)
+{
+  sg_error_t status = SG_OK;
+
+  simgrid::s4u::ExecPtr s4u_exec(exec, false);
+  try {
+    s4u_exec->wait_for(-1);
+  } catch (const simgrid::TimeoutException&) {
+    status = SG_ERROR_TIMEOUT;
+  } catch (const simgrid::CancelException&) {
+    status = SG_ERROR_CANCELED;
+  } catch (const simgrid::HostFailureException&) {
+    status = SG_ERROR_HOST;
+  }
+  return status;
+}
+
+sg_error_t sg_exec_wait_for(sg_exec_t exec, double timeout)
+{
+  sg_error_t status = SG_OK;
+
+  simgrid::s4u::ExecPtr s4u_exec(exec, false);
+  try {
+    s4u_exec->wait_for(timeout);
+  } catch (const simgrid::TimeoutException&) {
+    status = SG_ERROR_TIMEOUT;
+  } catch (const simgrid::CancelException&) {
+    status = SG_ERROR_CANCELED;
+  } catch (const simgrid::HostFailureException&) {
+    status = SG_ERROR_HOST;
+  }
+  return status;
+}
+
+int sg_exec_wait_any(sg_exec_t* execs, size_t count)
+{
+  return sg_exec_wait_any_for(execs, count, -1);
+}
+
+int sg_exec_wait_any_for(sg_exec_t* execs, size_t count, double timeout)
+{
+  std::vector<simgrid::s4u::ExecPtr> s4u_execs;
+  for (unsigned int i = 0; i < count; i++)
+    s4u_execs.emplace_back(execs[i], false);
+
+  int pos = simgrid::s4u::Exec::wait_any_for(&s4u_execs, timeout);
+  for (unsigned i = 0; i < count; i++) {
+    if (pos != -1 && static_cast<unsigned>(pos) != i)
+      s4u_execs[i]->add_ref();
+  }
+  return pos;
+}

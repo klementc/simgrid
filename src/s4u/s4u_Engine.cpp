@@ -93,7 +93,10 @@ void Engine::load_platform(const std::string& platf)
 
 void Engine::register_function(const std::string& name, int (*code)(int, char**)) // deprecated
 {
-  register_function(name, [code](std::vector<std::string> args) { return xbt::wrap_main(code, std::move(args)); });
+  kernel::actor::ActorCodeFactory code_factory = [code](std::vector<std::string> args) {
+    return xbt::wrap_main(code, std::move(args));
+  };
+  register_function(name, std::move(code_factory));
 }
 void Engine::register_default(int (*code)(int, char**)) // deprecated
 {
@@ -101,23 +104,28 @@ void Engine::register_default(int (*code)(int, char**)) // deprecated
 }
 
 /** Registers the main function of an actor that will be launched from the deployment file */
-void Engine::register_function(const std::string& name, void (*code)(int, char**))
+void Engine::register_function(const std::string& name, const std::function<void(int, char**)>& code)
 {
-  register_function(name, [code](std::vector<std::string> args) { return xbt::wrap_main(code, std::move(args)); });
+  kernel::actor::ActorCodeFactory code_factory = [code](std::vector<std::string> args) {
+    return xbt::wrap_main(code, std::move(args));
+  };
+  register_function(name, std::move(code_factory));
 }
 
 /** Registers the main function of an actor that will be launched from the deployment file */
-void Engine::register_function(const std::string& name, void (*code)(std::vector<std::string>))
+void Engine::register_function(const std::string& name, const std::function<void(std::vector<std::string>)>& code)
 {
-  register_function(name,
-                    [code](std::vector<std::string> args) { return std::bind(std::move(code), std::move(args)); });
+  kernel::actor::ActorCodeFactory code_factory = [code](std::vector<std::string> args) {
+    return std::bind(std::move(code), std::move(args));
+  };
+  register_function(name, std::move(code_factory));
 }
 /** Registers a function as the default main function of actors
  *
  * It will be used as fallback when the function requested from the deployment file was not registered.
  * It is used for trace-based simulations (see examples/s4u/replay-comms and similar).
  */
-void Engine::register_default(void (*code)(int, char**))
+void Engine::register_default(const std::function<void(int, char**)>& code)
 {
   register_default([code](std::vector<std::string> args) { return xbt::wrap_main(code, std::move(args)); });
 }
@@ -302,7 +310,6 @@ size_t Engine::get_actor_count()
 std::vector<ActorPtr> Engine::get_all_actors()
 {
   std::vector<ActorPtr> actor_list;
-  actor_list.push_back(simgrid::s4u::Actor::self());
   for (auto const& kv : simix_global->process_list) {
     actor_list.push_back(kv.second->iface());
   }
@@ -402,6 +409,23 @@ void Engine::set_config(const std::string& str)
 {
   config::set_parse(str);
 }
+void Engine::set_config(const std::string& name, int value)
+{
+  config::set_value(name.c_str(), value);
+}
+void Engine::set_config(const std::string& name, double value)
+{
+  config::set_value(name.c_str(), value);
+}
+void Engine::set_config(const std::string& name, bool value)
+{
+  config::set_value(name.c_str(), value);
+}
+void Engine::set_config(const std::string& name, const std::string& value)
+{
+  config::set_value(name.c_str(), value);
+}
+
 } // namespace s4u
 } // namespace simgrid
 
