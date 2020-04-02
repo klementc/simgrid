@@ -27,8 +27,10 @@ msg_error_t MSG_main()
 }
 void MSG_function_register(const char* name, int (*code)(int, char**))
 {
-  simgrid::s4u::Engine::get_instance()->register_function(
-      name, [code](std::vector<std::string> args) { return simgrid::xbt::wrap_main(code, std::move(args)); });
+  simgrid::kernel::actor::ActorCodeFactory code_factory = [code](std::vector<std::string> args) {
+    return simgrid::xbt::wrap_main(code, std::move(args));
+  };
+  simgrid::s4u::Engine::get_instance()->register_function(name, code_factory);
 }
 void MSG_function_register_default(int (*code)(int, char**))
 {
@@ -216,9 +218,9 @@ void MSG_process_unref(const_sg_actor_t process)
   sg_actor_unref(process);
 }
 /** @brief Return the current number MSG processes. */
-int MSG_process_get_number()
+int MSG_process_get_number() // XBT_ATTRIB_DEPRECATED_v330
 {
-  return simgrid_get_actor_count();
+  return sg_actor_count();
 }
 /* ************************** NetZones *************************** */
 sg_netzone_t MSG_zone_get_root()
@@ -297,9 +299,17 @@ sg_size_t MSG_storage_write(sg_storage_t storage, sg_size_t size)
 }
 
 /* ************************** hosts *************************** */
-xbt_dynar_t MSG_hosts_as_dynar()
+xbt_dynar_t MSG_hosts_as_dynar() // XBT_ATTRIB_DEPRECATED_v330
 {
-  return sg_hosts_as_dynar();
+  size_t host_count = sg_host_count();
+  sg_host_t* list   = sg_host_list();
+
+  xbt_dynar_t res = xbt_dynar_new(sizeof(sg_host_t), nullptr);
+  for (size_t i = 0; i < host_count; i++)
+    xbt_dynar_push_as(res, sg_host_t, list[i]);
+  xbt_free(list);
+
+  return res;
 }
 size_t MSG_get_host_number()
 {

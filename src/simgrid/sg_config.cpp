@@ -47,11 +47,10 @@ int _sg_cfg_init_status = 0;
 static void sg_config_cmd_line(int *argc, char **argv)
 {
   bool shall_exit = false;
-  int i;
-  int j;
   bool parse_args = true; // Stop parsing the parameters once we found '--'
 
-  for (j = i = 1; i < *argc; i++) {
+  int j = 1;
+  for (int i = j; i < *argc; i++) {
     if (not strcmp("--", argv[i])) {
       parse_args = false;
       // Remove that '--' from the arguments
@@ -297,6 +296,16 @@ void sg_config_init(int *argc, char **argv)
   simgrid::config::bind_flag(
       sg_weight_S_parameter, "network/weight-S", {"network/weight_S"},
       "Correction factor to apply to the weight of competing streams (default value set by network model)");
+
+  simgrid::config::declare_flag<double>("network/loopback-lat",
+                                      "For network models with an implicit loopback link (L07, CM02, LV08), "
+                                      "latency of the loopback link. 0 by default",
+                                      0);
+
+  simgrid::config::declare_flag<double>("network/loopback-bw",
+                                      "For network models with an implicit loopback link (L07, CM02, LV08), "
+                                      "bandwidth of the loopback link. 10GBps by default",
+                                      10e9);
 
   /* Inclusion path */
   simgrid::config::declare_flag<std::string>("path", "Lookup path for inclusions in platform and deployment XML files",

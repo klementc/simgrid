@@ -24,6 +24,7 @@ void simcall_HANDLER_execution_waitany_for(smx_simcall_t simcall, simgrid::kerne
     simcall->timeout_cb_ = nullptr;
   } else {
     simcall->timeout_cb_ = simgrid::simix::Timer::set(SIMIX_get_clock() + timeout, [simcall, execs, count]() {
+      simcall->timeout_cb_ = nullptr;
       for (size_t i = 0; i < count; i++) {
         // Remove the first occurrence of simcall:
         auto* exec = execs[i];
@@ -53,6 +54,15 @@ void simcall_HANDLER_execution_waitany_for(smx_simcall_t simcall, simgrid::kerne
 namespace simgrid {
 namespace kernel {
 namespace activity {
+
+ExecImpl::ExecImpl()
+{
+  actor::ActorImpl* self = actor::ActorImpl::self();
+  if (self) {
+    actor_ = self;
+    self->activities.push_back(this);
+  }
+}
 
 ExecImpl& ExecImpl::set_host(s4u::Host* host)
 {
@@ -155,6 +165,10 @@ void ExecImpl::post()
 
   clean_action();
   timeout_detector_.reset();
+  if (actor_) {
+    actor_->activities.remove(this);
+    actor_ = nullptr;
+  }
   /* Answer all simcalls associated with the synchro */
   finish();
 }

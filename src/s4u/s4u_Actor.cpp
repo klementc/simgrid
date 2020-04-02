@@ -41,7 +41,7 @@ xbt::signal<void(Actor const&)> s4u::Actor::on_destruction;
 // ***** Actor creation *****
 Actor* Actor::self()
 {
-  kernel::context::Context* self_context = kernel::context::Context::self();
+  const kernel::context::Context* self_context = kernel::context::Context::self();
   if (self_context == nullptr)
     return nullptr;
 
@@ -54,6 +54,15 @@ ActorPtr Actor::init(const std::string& name, s4u::Host* host)
   kernel::actor::ActorImpl* actor =
       kernel::actor::simcall([self, &name, host] { return self->init(name, host).get(); });
   return actor->iface();
+}
+
+/** Set a non-default stack size for this context (in Kb)
+ *
+ * This must be done before starting the actor, and it won't work with the thread factory. */
+ActorPtr Actor::set_stacksize(unsigned stacksize)
+{
+  pimpl_->set_stacksize(stacksize * 1024);
+  return this;
 }
 
 ActorPtr Actor::start(const std::function<void()>& code)
@@ -462,6 +471,23 @@ void migrate(Host* new_host) // deprecated
 } // namespace simgrid
 
 /* **************************** Public C interface *************************** */
+size_t sg_actor_count()
+{
+  return simgrid::s4u::Engine::get_instance()->get_actor_count();
+}
+
+sg_actor_t* sg_actor_list()
+{
+  simgrid::s4u::Engine* e = simgrid::s4u::Engine::get_instance();
+  size_t actor_count      = e->get_actor_count();
+  xbt_assert(actor_count > 0, "There is no actor!");
+  std::vector<simgrid::s4u::ActorPtr> actors = e->get_all_actors();
+
+  sg_actor_t* res = xbt_new(sg_actor_t, actors.size());
+  for (size_t i = 0; i < actor_count; i++)
+    res[i] = actors[i].get();
+  return res;
+}
 
 sg_actor_t sg_actor_init(const char* name, sg_host_t host)
 {
@@ -474,6 +500,17 @@ void sg_actor_start(sg_actor_t actor, xbt_main_func_t code, int argc, const char
   if (code)
     function = simgrid::xbt::wrap_main(code, argc, argv);
   actor->start(std::move(function));
+}
+
+sg_actor_t sg_actor_create(const char* name, sg_host_t host, xbt_main_func_t code, int argc, const char* const* argv)
+{
+  simgrid::kernel::actor::ActorCode function = simgrid::xbt::wrap_main(code, argc, argv);
+  return simgrid::s4u::Actor::init(name, host)->start(std::move(function)).get();
+}
+
+void sg_actor_set_stacksize(sg_actor_t actor, unsigned size)
+{
+  actor->set_stacksize(size);
 }
 
 void sg_actor_exit()
@@ -614,7 +651,7 @@ void sg_actor_daemonize(sg_actor_t actor)
 }
 
 /** Returns whether or not this actor has been daemonized or not */
-int sg_actor_is_daemon(sg_actor_t actor)
+int sg_actor_is_daemon(const_sg_actor_t actor)
 {
   return actor->is_daemon();
 }
@@ -739,9 +776,31 @@ sg_actor_t sg_actor_self()
   return simgrid::s4u::Actor::self();
 }
 
-void sg_actor_self_execute(double flops)
+void sg_actor_self_execute(double flops) // XBT_DEPRECATED_v330
 {
   simgrid::s4u::this_actor::execute(flops);
+}
+
+void sg_actor_execute(double flops)
+{
+  simgrid::s4u::this_actor::execute(flops);
+}
+void sg_actor_execute_with_priority(double flops, double priority)
+{
+  simgrid::s4u::this_actor::exec_init(flops)->set_priority(priority)->wait();
+}
+
+void sg_actor_parallel_execute(int host_nb, sg_host_t* host_list, double* flops_amount, double* bytes_amount)
+{
+  std::vector<simgrid::s4u::Host*> hosts(host_list, host_list + host_nb);
+  std::vector<double> flops;
+  std::vector<double> bytes;
+  if (flops_amount != nullptr)
+    flops = std::vector<double>(flops_amount, flops_amount + host_nb);
+  if (bytes_amount != nullptr)
+    bytes = std::vector<double>(bytes_amount, bytes_amount + host_nb * host_nb);
+
+  simgrid::s4u::this_actor::parallel_execute(hosts, flops, bytes);
 }
 
 /** @brief Take an extra reference on that actor to prevent it to be garbage-collected */
@@ -772,4 +831,35 @@ void sg_actor_data_set(sg_actor_t actor, void* userdata)
 void sg_actor_on_exit(int_f_int_pvoid_t fun, void* data)
 {
   simgrid::s4u::this_actor::on_exit([fun, data](bool failed) { fun(failed ? 1 /*FAILURE*/ : 0 /*SUCCESS*/, data); });
+}
+
+sg_exec_t sg_actor_exec_init(double computation_amount)
+{
+  simgrid::s4u::ExecPtr exec = simgrid::s4u::this_actor::exec_init(computation_amount);
+  exec->add_ref();
+  return exec.get();
+}
+
+sg_exec_t sg_actor_parallel_exec_init(int host_nb, const sg_host_t* host_list, double* flops_amount,
+                                      double* bytes_amount)
+{
+  std::vector<simgrid::s4u::Host*> hosts(host_list, host_list + host_nb);
+  std::vector<double> flops;
+  std::vector<double> bytes;
+  if (flops_amount != nullptr)
+    flops = std::vector<double>(flops_amount, flops_amount + host_nb);
+  if (bytes_amount != nullptr)
+    bytes = std::vector<double>(bytes_amount, bytes_amount + host_nb * host_nb);
+
+  simgrid::s4u::ExecPtr exec = simgrid::s4u::ExecPtr(new simgrid::s4u::Exec());
+  exec->set_flops_amounts(flops)->set_bytes_amounts(bytes)->set_hosts(hosts);
+  exec->add_ref();
+  return exec.get();
+}
+
+sg_exec_t sg_actor_exec_async(double computation_amount)
+{
+  simgrid::s4u::ExecPtr exec = simgrid::s4u::this_actor::exec_async(computation_amount);
+  exec->add_ref();
+  return exec.get();
 }

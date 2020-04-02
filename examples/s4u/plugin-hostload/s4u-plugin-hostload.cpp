@@ -25,18 +25,19 @@ static void execute_load_test()
            "changed)",
            simgrid::s4u::Engine::get_clock() - start, host->get_speed(), sg_host_get_computed_flops(host));
 
-  // Run a task
+  // Run an activity
   start = simgrid::s4u::Engine::get_clock();
-  XBT_INFO("Run a task of %.0E flops at current speed of %.0E flop/s", 200E6, host->get_speed());
+  XBT_INFO("Run an activity of %.0E flops at current speed of %.0E flop/s", 200E6, host->get_speed());
   simgrid::s4u::this_actor::execute(200E6);
 
-  XBT_INFO("Done working on my task; this took %.2fs; current peak speed: %.0E flop/s (when I started the computation, "
-           "the speed was set to %.0E flop/s); number of flops computed so "
-           "far: %.2E, average load as reported by the HostLoad plugin: %.5f (should be %.5f)",
-           simgrid::s4u::Engine::get_clock() - start, host->get_speed(), speed, sg_host_get_computed_flops(host),
-           sg_host_get_avg_load(host),
-           200E6 / (10.5 * speed * host->get_core_count() +
-                    (simgrid::s4u::Engine::get_clock() - start - 0.5) * host->get_speed() * host->get_core_count()));
+  XBT_INFO(
+      "Done working on my activity; this took %.2fs; current peak speed: %.0E flop/s (when I started the computation, "
+      "the speed was set to %.0E flop/s); number of flops computed so "
+      "far: %.2E, average load as reported by the HostLoad plugin: %.5f (should be %.5f)",
+      simgrid::s4u::Engine::get_clock() - start, host->get_speed(), speed, sg_host_get_computed_flops(host),
+      sg_host_get_avg_load(host),
+      200E6 / (10.5 * speed * host->get_core_count() +
+               (simgrid::s4u::Engine::get_clock() - start - 0.5) * host->get_speed() * host->get_core_count()));
 
   // ========= Change power peak =========
   int pstate = 1;
@@ -45,11 +46,11 @@ static void execute_load_test()
       "========= Requesting pstate %d (speed should be of %.0E flop/s and is of %.0E flop/s, average load is %.5f)",
       pstate, host->get_pstate_speed(pstate), host->get_speed(), sg_host_get_avg_load(host));
 
-  // Run a second task
+  // Run a second activity
   start = simgrid::s4u::Engine::get_clock();
-  XBT_INFO("Run a task of %.0E flops", 100E6);
+  XBT_INFO("Run an activity of %.0E flops", 100E6);
   simgrid::s4u::this_actor::execute(100E6);
-  XBT_INFO("Done working on my task; this took %.2fs; current peak speed: %.0E flop/s; number of flops computed so "
+  XBT_INFO("Done working on my activity; this took %.2fs; current peak speed: %.0E flop/s; number of flops computed so "
            "far: %.2E",
            simgrid::s4u::Engine::get_clock() - start, host->get_speed(), sg_host_get_computed_flops(host));
 
@@ -78,7 +79,7 @@ static void change_speed()
   s4u_Host* host = simgrid::s4u::Host::by_name("MyHost1");
   simgrid::s4u::this_actor::sleep_for(10.5);
   XBT_INFO("I slept until now, but now I'll change the speed of this host "
-      "while the other process is still computing! This should slow the computation down.");
+           "while the other actor is still computing! This should slow the computation down.");
   host->set_pstate(2);
 }
 

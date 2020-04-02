@@ -7,7 +7,7 @@
 
 XBT_LOG_NEW_DEFAULT_CATEGORY(s4u_test, "Messages specific for this s4u example");
 
-/* This actor simply waits for its task completion after starting it.
+/* This actor simply waits for its activity completion after starting it.
  * That's exactly equivalent to synchronous execution. */
 static void waiter()
 {
@@ -33,7 +33,6 @@ static void monitor()
              100 * activity->get_remaining_ratio());
     simgrid::s4u::this_actor::sleep_for(0.3);
   }
-  activity->wait();
 
   XBT_INFO("Goodbye now!");
 }

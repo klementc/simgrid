@@ -20,18 +20,13 @@
 #include "surf/surf.hpp"
 #include "xbt/graph.h"
 
-XBT_LOG_NEW_DEFAULT_SUBCATEGORY(instr_routing, instr, "Tracing platform hierarchy");
+#include <fstream>
 
-static std::vector<simgrid::instr::NetZoneContainer*> currentContainer; /* push and pop, used only in creation */
+XBT_LOG_NEW_DEFAULT_SUBCATEGORY(instr_routing, instr, "Tracing platform hierarchy");
 
 std::string instr_pid(simgrid::s4u::Actor const& proc)
 {
   return std::string(proc.get_name()) + "-" + std::to_string(proc.get_pid());
-}
-
-static const char* instr_node_name(const s_xbt_node_t* node)
-{
-  return static_cast<char*>(xbt_graph_node_get_data(node));
 }
 
 static container_t lowestCommonAncestor(const simgrid::instr::Container* a1, const simgrid::instr::Container* a2)
@@ -155,274 +150,6 @@ static void recursiveGraphExtraction(const simgrid::s4u::NetZone* netzone, conta
 }
 
 /*
- * Callbacks
- */
-static void instr_netzone_on_creation(simgrid::s4u::NetZone const& netzone)
-{
-  std::string id = netzone.get_name();
-  if (simgrid::instr::Container::get_root() == nullptr) {
-    simgrid::instr::NetZoneContainer* root = new simgrid::instr::NetZoneContainer(id, 0, nullptr);
-    xbt_assert(simgrid::instr::Container::get_root() == root);
-
-    if (TRACE_smpi_is_enabled()) {
-      simgrid::instr::ContainerType* mpi = root->type_->by_name_or_create<simgrid::instr::ContainerType>("MPI");
-      if (not TRACE_smpi_is_grouped())
-        mpi->by_name_or_create<simgrid::instr::StateType>("MPI_STATE");
-      root->type_->by_name_or_create("MPI_LINK", mpi, mpi);
-      // TODO See if we can move this to the LoadBalancer plugin
-      root->type_->by_name_or_create("MIGRATE_LINK", mpi, mpi);
-      mpi->by_name_or_create<simgrid::instr::StateType>("MIGRATE_STATE");
-    }
-
-    if (TRACE_needs_platform()) {
-      currentContainer.push_back(root);
-    }
-    return;
-  }
-
-  if (TRACE_needs_platform()) {
-    simgrid::instr::NetZoneContainer* container =
-        new simgrid::instr::NetZoneContainer(id, currentContainer.size(), currentContainer.back());
-    currentContainer.push_back(container);
-  }
-}
-
-static void instr_link_on_creation(simgrid::s4u::Link const& link)
-{
-  if (currentContainer.empty()) // No ongoing parsing. Are you creating the loopback?
-    return;
-
-  container_t container = new simgrid::instr::Container(link.get_name(), "LINK", currentContainer.back());
-
-  if ((TRACE_categorized() || TRACE_uncategorized() || TRACE_platform()) && (not TRACE_disable_link())) {
-    simgrid::instr::VariableType* bandwidth = container->type_->by_name_or_create("bandwidth", "");
-    bandwidth->set_calling_container(container);
-    bandwidth->set_event(0, link.get_bandwidth());
-    simgrid::instr::VariableType* latency = container->type_->by_name_or_create("latency", "");
-    latency->set_calling_container(container);
-    latency->set_event(0, link.get_latency());
-  }
-  if (TRACE_uncategorized()) {
-    container->type_->by_name_or_create("bandwidth_used", "0.5 0.5 0.5");
-  }
-}
-
-static void instr_host_on_creation(simgrid::s4u::Host const& host)
-{
-  simgrid::instr::Container* container  = new simgrid::instr::HostContainer(host, currentContainer.back());
-  const simgrid::instr::Container* root = simgrid::instr::Container::get_root();
-
-  if ((TRACE_categorized() || TRACE_uncategorized() || TRACE_platform()) && (not TRACE_disable_speed())) {
-    simgrid::instr::VariableType* speed = container->type_->by_name_or_create("speed", "");
-    speed->set_calling_container(container);
-    speed->set_event(0, host.get_speed());
-
-    simgrid::instr::VariableType* cores = container->type_->by_name_or_create("core_count", "");
-    cores->set_calling_container(container);
-    cores->set_event(0, host.get_core_count());
-  }
-
-  if (TRACE_uncategorized())
-    container->type_->by_name_or_create("speed_used", "0.5 0.5 0.5");
-
-  if (TRACE_smpi_is_enabled() && TRACE_smpi_is_grouped()) {
-    simgrid::instr::ContainerType* mpi = container->type_->by_name_or_create<simgrid::instr::ContainerType>("MPI");
-    mpi->by_name_or_create<simgrid::instr::StateType>("MPI_STATE");
-    // TODO See if we can move this to the LoadBalancer plugin
-    root->type_->by_name_or_create("MIGRATE_LINK", mpi, mpi);
-    mpi->by_name_or_create<simgrid::instr::StateType>("MIGRATE_STATE");
-  }
-}
-
-static void instr_host_on_speed_change(simgrid::s4u::Host const& host)
-{
-  simgrid::instr::Container::by_name(host.get_name())
-      ->get_variable("speed")
-      ->set_event(surf_get_clock(), host.get_core_count() * host.get_available_speed());
-}
-
-static void instr_action_on_state_change(simgrid::kernel::resource::Action const& action,
-                                         simgrid::kernel::resource::Action::State /* previous */)
-{
-  int n = action.get_variable()->get_number_of_constraint();
-
-  for (int i = 0; i < n; i++) {
-    double value = action.get_variable()->get_value() * action.get_variable()->get_constraint_weight(i);
-    /* Beware of composite actions: ptasks put links and cpus together. Extra pb: we cannot dynamic_cast from void* */
-    simgrid::kernel::resource::Resource* resource = action.get_variable()->get_constraint(i)->get_id();
-    const simgrid::kernel::resource::Cpu* cpu     = dynamic_cast<simgrid::kernel::resource::Cpu*>(resource);
-
-    if (cpu != nullptr)
-      TRACE_surf_resource_set_utilization("HOST", "speed_used", cpu->get_cname(), action.get_category(), value,
-                                          action.get_last_update(), SIMIX_get_clock() - action.get_last_update());
-
-    const simgrid::kernel::resource::LinkImpl* link = dynamic_cast<simgrid::kernel::resource::LinkImpl*>(resource);
-
-    if (link != nullptr)
-      TRACE_surf_resource_set_utilization("LINK", "bandwidth_used", link->get_cname(), action.get_category(), value,
-                                          action.get_last_update(), SIMIX_get_clock() - action.get_last_update());
-  }
-}
-
-static void instr_link_on_bandwidth_change(simgrid::s4u::Link const& link)
-{
-  simgrid::instr::Container::by_name(link.get_name())
-      ->get_variable("bandwidth")
-      ->set_event(surf_get_clock(), sg_bandwidth_factor * link.get_bandwidth());
-}
-
-static void instr_netpoint_on_creation(simgrid::kernel::routing::NetPoint const& netpoint)
-{
-  if (netpoint.is_router())
-    new simgrid::instr::RouterContainer(netpoint.get_name(), currentContainer.back());
-}
-
-static void instr_on_platform_created()
-{
-  currentContainer.clear();
-  std::set<std::string>* filter = new std::set<std::string>();
-  XBT_DEBUG("Starting graph extraction.");
-  recursiveGraphExtraction(simgrid::s4u::Engine::get_instance()->get_netzone_root(),
-                           simgrid::instr::Container::get_root(), filter);
-  XBT_DEBUG("Graph extraction finished.");
-  delete filter;
-  TRACE_paje_dump_buffer(true);
-}
-
-static void instr_actor_on_creation(simgrid::s4u::Actor const& actor)
-{
-  const simgrid::instr::Container* root = simgrid::instr::Container::get_root();
-  simgrid::instr::Container* container  = simgrid::instr::Container::by_name(actor.get_host()->get_name());
-
-  container->create_child(instr_pid(actor), "ACTOR");
-  simgrid::instr::ContainerType* actor_type =
-      container->type_->by_name_or_create<simgrid::instr::ContainerType>("ACTOR");
-  simgrid::instr::StateType* state = actor_type->by_name_or_create<simgrid::instr::StateType>("ACTOR_STATE");
-  state->add_entity_value("suspend", "1 0 1");
-  state->add_entity_value("sleep", "1 1 0");
-  state->add_entity_value("receive", "1 0 0");
-  state->add_entity_value("send", "0 0 1");
-  state->add_entity_value("execute", "0 1 1");
-  root->type_->by_name_or_create("ACTOR_LINK", actor_type, actor_type);
-  root->type_->by_name_or_create("ACTOR_TASK_LINK", actor_type, actor_type);
-
-  std::string container_name = instr_pid(actor);
-  actor.on_exit([container_name](bool failed) {
-    if (failed)
-      // kill means that this actor no longer exists, let's destroy it
-      simgrid::instr::Container::by_name(container_name)->remove_from_parent();
-  });
-}
-
-static void instr_actor_on_host_change(simgrid::s4u::Actor const& actor,
-                                       simgrid::s4u::Host const& /*previous_location*/)
-{
-  static long long int counter = 0;
-  container_t container = simgrid::instr::Container::by_name(instr_pid(actor));
-  simgrid::instr::LinkType* link = simgrid::instr::Container::get_root()->get_link("ACTOR_LINK");
-
-  // start link
-  link->start_event(container, "M", std::to_string(counter));
-  // destroy existing container of this process
-  container->remove_from_parent();
-  // create new container on the new_host location
-  simgrid::instr::Container::by_name(actor.get_host()->get_name())->create_child(instr_pid(actor), "ACTOR");
-  // end link
-  link->end_event(simgrid::instr::Container::by_name(instr_pid(actor)), "M", std::to_string(counter));
-  counter++;
-}
-
-static void instr_vm_on_creation(simgrid::s4u::Host const& host)
-{
-  const simgrid::instr::Container* container = new simgrid::instr::HostContainer(host, currentContainer.back());
-  const simgrid::instr::Container* root      = simgrid::instr::Container::get_root();
-  simgrid::instr::ContainerType* vm = container->type_->by_name_or_create<simgrid::instr::ContainerType>("VM");
-  simgrid::instr::StateType* state  = vm->by_name_or_create<simgrid::instr::StateType>("VM_STATE");
-  state->add_entity_value("suspend", "1 0 1");
-  state->add_entity_value("sleep", "1 1 0");
-  state->add_entity_value("receive", "1 0 0");
-  state->add_entity_value("send", "0 0 1");
-  state->add_entity_value("execute", "0 1 1");
-  root->type_->by_name_or_create("VM_LINK", vm, vm);
-  root->type_->by_name_or_create("VM_ACTOR_LINK", vm, vm);
-}
-
-void instr_define_callbacks()
-{
-  // always need the callbacks to zones (we need only the root zone), to create the rootContainer and the rootType
-  // properly
-  if (TRACE_needs_platform()) {
-    simgrid::s4u::Engine::on_platform_created.connect(instr_on_platform_created);
-    simgrid::s4u::Host::on_creation.connect(instr_host_on_creation);
-    simgrid::s4u::Host::on_speed_change.connect(instr_host_on_speed_change);
-    simgrid::s4u::Link::on_creation.connect(instr_link_on_creation);
-    simgrid::s4u::Link::on_bandwidth_change.connect(instr_link_on_bandwidth_change);
-    simgrid::s4u::NetZone::on_seal.connect(
-        [](simgrid::s4u::NetZone const& /*netzone*/) { currentContainer.pop_back(); });
-    simgrid::kernel::routing::NetPoint::on_creation.connect(instr_netpoint_on_creation);
-  }
-  simgrid::s4u::NetZone::on_creation.connect(instr_netzone_on_creation);
-
-  simgrid::kernel::resource::CpuAction::on_state_change.connect(instr_action_on_state_change);
-  simgrid::s4u::Link::on_communication_state_change.connect(instr_action_on_state_change);
-
-  if (TRACE_actor_is_enabled()) {
-    simgrid::s4u::Actor::on_creation.connect(instr_actor_on_creation);
-    simgrid::s4u::Actor::on_destruction.connect([](simgrid::s4u::Actor const& actor) {
-      auto container = simgrid::instr::Container::by_name_or_null(instr_pid(actor));
-      if (container != nullptr)
-        container->remove_from_parent();
-    });
-    simgrid::s4u::Actor::on_suspend.connect([](simgrid::s4u::Actor const& actor) {
-      simgrid::instr::Container::by_name(instr_pid(actor))->get_state("ACTOR_STATE")->push_event("suspend");
-    });
-    simgrid::s4u::Actor::on_resume.connect([](simgrid::s4u::Actor const& actor) {
-      simgrid::instr::Container::by_name(instr_pid(actor))->get_state("ACTOR_STATE")->pop_event();
-    });
-    simgrid::s4u::Actor::on_sleep.connect([](simgrid::s4u::Actor const& actor) {
-      simgrid::instr::Container::by_name(instr_pid(actor))->get_state("ACTOR_STATE")->push_event("sleep");
-    });
-    simgrid::s4u::Actor::on_wake_up.connect([](simgrid::s4u::Actor const& actor) {
-      simgrid::instr::Container::by_name(instr_pid(actor))->get_state("ACTOR_STATE")->pop_event();
-    });
-    simgrid::s4u::Exec::on_start.connect([](simgrid::s4u::Actor const& actor, simgrid::s4u::Exec const&) {
-      simgrid::instr::Container::by_name(instr_pid(actor))->get_state("ACTOR_STATE")->push_event("execute");
-    });
-    simgrid::s4u::Exec::on_completion.connect([](simgrid::s4u::Actor const& actor, simgrid::s4u::Exec const&) {
-      simgrid::instr::Container::by_name(instr_pid(actor))->get_state("ACTOR_STATE")->pop_event();
-    });
-    simgrid::s4u::Comm::on_sender_start.connect([](simgrid::s4u::Actor const& actor) {
-      simgrid::instr::Container::by_name(instr_pid(actor))->get_state("ACTOR_STATE")->push_event("send");
-    });
-    simgrid::s4u::Comm::on_receiver_start.connect([](simgrid::s4u::Actor const& actor) {
-      simgrid::instr::Container::by_name(instr_pid(actor))->get_state("ACTOR_STATE")->push_event("receive");
-    });
-    simgrid::s4u::Comm::on_completion.connect([](simgrid::s4u::Actor const& actor) {
-      simgrid::instr::Container::by_name(instr_pid(actor))->get_state("ACTOR_STATE")->pop_event();
-    });
-    simgrid::s4u::Actor::on_host_change.connect(instr_actor_on_host_change);
-  }
-
-  if (TRACE_vm_is_enabled()) {
-    simgrid::s4u::Host::on_creation.connect(instr_vm_on_creation);
-    simgrid::s4u::VirtualMachine::on_start.connect([](simgrid::s4u::VirtualMachine const& vm) {
-      simgrid::instr::Container::by_name(vm.get_name())->get_state("VM_STATE")->push_event("start");
-    });
-    simgrid::s4u::VirtualMachine::on_started.connect([](simgrid::s4u::VirtualMachine const& vm) {
-      simgrid::instr::Container::by_name(vm.get_name())->get_state("VM_STATE")->pop_event();
-    });
-    simgrid::s4u::VirtualMachine::on_suspend.connect([](simgrid::s4u::VirtualMachine const& vm) {
-      simgrid::instr::Container::by_name(vm.get_name())->get_state("VM_STATE")->push_event("suspend");
-    });
-    simgrid::s4u::VirtualMachine::on_resume.connect([](simgrid::s4u::VirtualMachine const& vm) {
-      simgrid::instr::Container::by_name(vm.get_name())->get_state("VM_STATE")->pop_event();
-    });
-    simgrid::s4u::Host::on_destruction.connect([](simgrid::s4u::Host const& host) {
-      simgrid::instr::Container::by_name(host.get_name())->remove_from_parent();
-    });
-  }
-}
-/*
  * user categories support
  */
 static void recursiveNewVariableType(const std::string& new_typename, const std::string& color,
@@ -490,65 +217,305 @@ void instr_new_value_for_user_state_type(const std::string& type_name, const cha
   recursiveNewValueForUserStateType(type_name, value, color, simgrid::instr::Container::get_root()->type_);
 }
 
-#define GRAPHICATOR_SUPPORT_FUNCTIONS
+namespace simgrid {
+namespace instr {
 
-static void recursiveXBTGraphExtraction(const s_xbt_graph_t* graph, std::map<std::string, xbt_node_t>* nodes,
-                                        std::map<std::string, xbt_edge_t>* edges, const_sg_netzone_t netzone,
-                                        container_t container)
+void platform_graph_export_graphviz(const std::string& output_filename)
 {
-  if (not netzone->get_children().empty()) {
-    // bottom-up recursion
-    for (auto const& netzone_child : netzone->get_children()) {
-      container_t child_container = container->children_.at(netzone_child->get_name());
-      recursiveXBTGraphExtraction(graph, nodes, edges, netzone_child, child_container);
-    }
-  }
-
-  netzone->get_impl()->get_graph(graph, nodes, edges);
-}
-
-xbt_graph_t instr_routing_platform_graph()
-{
-  xbt_graph_t ret                          = xbt_graph_new_graph(0, nullptr);
+  xbt_graph_t g                            = xbt_graph_new_graph(0, nullptr);
   std::map<std::string, xbt_node_t>* nodes = new std::map<std::string, xbt_node_t>();
   std::map<std::string, xbt_edge_t>* edges = new std::map<std::string, xbt_edge_t>();
-  recursiveXBTGraphExtraction(ret, nodes, edges, simgrid::s4u::Engine::get_instance()->get_netzone_root(),
-                              simgrid::instr::Container::get_root());
-  delete nodes;
-  delete edges;
-  return ret;
-}
+  s4u::Engine::get_instance()->get_netzone_root()->extract_xbt_graph(g, nodes, edges);
 
-void instr_routing_platform_graph_export_graphviz(const s_xbt_graph_t* g, const char* filename)
-{
-  unsigned int cursor = 0;
-  xbt_node_t node     = nullptr;
-  xbt_edge_t edge     = nullptr;
-
-  FILE* file = fopen(filename, "w");
-  xbt_assert(file, "Failed to open %s \n", filename);
+  std::ofstream fs;
+  fs.open(output_filename, std::ofstream::out);
+  xbt_assert(not fs.fail(), "Failed to open %s", output_filename.c_str());
 
   if (g->directed)
-    fprintf(file, "digraph test {\n");
+    fs << "digraph test {" << std::endl;
   else
-    fprintf(file, "graph test {\n");
+    fs << "graph test {" << std::endl;
 
-  fprintf(file, "  graph [overlap=scale]\n");
+  fs << "  graph [overlap=scale]" << std::endl;
 
-  fprintf(file, "  node [shape=box, style=filled]\n");
-  fprintf(file, "  node [width=.3, height=.3, style=filled, color=skyblue]\n\n");
+  fs << "  node [shape=box, style=filled]" << std::endl;
+  fs << "  node [width=.3, height=.3, style=filled, color=skyblue]" << std::endl << std::endl;
 
-  xbt_dynar_foreach (g->nodes, cursor, node) {
-    fprintf(file, "  \"%s\";\n", instr_node_name(node));
-  }
-  xbt_dynar_foreach (g->edges, cursor, edge) {
-    const char* src_s = instr_node_name(edge->src);
-    const char* dst_s = instr_node_name(edge->dst);
+  for (auto const& elm : *nodes)
+    fs << "  \"" << elm.first << "\";" << std::endl;
+
+  for (auto const& elm : *edges) {
+    const char* src_s = static_cast<char*>(elm.second->src->data);
+    const char* dst_s = static_cast<char*>(elm.second->dst->data);
     if (g->directed)
-      fprintf(file, "  \"%s\" -> \"%s\";\n", src_s, dst_s);
+      fs << "  \"" << src_s << "\" -> \"" << dst_s << "\";" << std::endl;
     else
-      fprintf(file, "  \"%s\" -- \"%s\";\n", src_s, dst_s);
+      fs << "  \"" << src_s << "\" -- \"" << dst_s << "\";" << std::endl;
   }
-  fprintf(file, "}\n");
-  fclose(file);
+  fs << "}" << std::endl;
+  fs.close();
+
+  xbt_graph_free_graph(g, xbt_free_f, xbt_free_f, nullptr);
+  delete nodes;
+  delete edges;
 }
+
+/* Callbacks */
+static std::vector<NetZoneContainer*> currentContainer; /* push and pop, used only in creation */
+static void on_netzone_creation(s4u::NetZone const& netzone)
+{
+  std::string id = netzone.get_name();
+  if (Container::get_root() == nullptr) {
+    NetZoneContainer* root = new NetZoneContainer(id, 0, nullptr);
+    xbt_assert(Container::get_root() == root);
+
+    if (TRACE_smpi_is_enabled()) {
+      ContainerType* mpi = root->type_->by_name_or_create<ContainerType>("MPI");
+      if (not TRACE_smpi_is_grouped())
+        mpi->by_name_or_create<StateType>("MPI_STATE");
+      root->type_->by_name_or_create("MPI_LINK", mpi, mpi);
+      // TODO See if we can move this to the LoadBalancer plugin
+      root->type_->by_name_or_create("MIGRATE_LINK", mpi, mpi);
+      mpi->by_name_or_create<StateType>("MIGRATE_STATE");
+    }
+
+    if (TRACE_needs_platform()) {
+      currentContainer.push_back(root);
+    }
+    return;
+  }
+
+  if (TRACE_needs_platform()) {
+    NetZoneContainer* container = new NetZoneContainer(id, currentContainer.size(), currentContainer.back());
+    currentContainer.push_back(container);
+  }
+}
+
+static void on_link_creation(s4u::Link const& link)
+{
+  if (currentContainer.empty()) // No ongoing parsing. Are you creating the loopback?
+    return;
+
+  Container* container = new Container(link.get_name(), "LINK", currentContainer.back());
+
+  if ((TRACE_categorized() || TRACE_uncategorized() || TRACE_platform()) && (not TRACE_disable_link())) {
+    VariableType* bandwidth = container->type_->by_name_or_create("bandwidth", "");
+    bandwidth->set_calling_container(container);
+    bandwidth->set_event(0, link.get_bandwidth());
+    VariableType* latency = container->type_->by_name_or_create("latency", "");
+    latency->set_calling_container(container);
+    latency->set_event(0, link.get_latency());
+  }
+  if (TRACE_uncategorized()) {
+    container->type_->by_name_or_create("bandwidth_used", "0.5 0.5 0.5");
+  }
+}
+
+static void on_host_creation(s4u::Host const& host)
+{
+  Container* container  = new HostContainer(host, currentContainer.back());
+  const Container* root = Container::get_root();
+
+  if ((TRACE_categorized() || TRACE_uncategorized() || TRACE_platform()) && (not TRACE_disable_speed())) {
+    VariableType* speed = container->type_->by_name_or_create("speed", "");
+    speed->set_calling_container(container);
+    speed->set_event(0, host.get_speed());
+
+    VariableType* cores = container->type_->by_name_or_create("core_count", "");
+    cores->set_calling_container(container);
+    cores->set_event(0, host.get_core_count());
+  }
+
+  if (TRACE_uncategorized())
+    container->type_->by_name_or_create("speed_used", "0.5 0.5 0.5");
+
+  if (TRACE_smpi_is_enabled() && TRACE_smpi_is_grouped()) {
+    ContainerType* mpi = container->type_->by_name_or_create<ContainerType>("MPI");
+    mpi->by_name_or_create<StateType>("MPI_STATE");
+    // TODO See if we can move this to the LoadBalancer plugin
+    root->type_->by_name_or_create("MIGRATE_LINK", mpi, mpi);
+    mpi->by_name_or_create<StateType>("MIGRATE_STATE");
+  }
+}
+
+static void on_host_speed_change(s4u::Host const& host)
+{
+  Container::by_name(host.get_name())
+      ->get_variable("speed")
+      ->set_event(surf_get_clock(), host.get_core_count() * host.get_available_speed());
+}
+
+static void on_action_state_change(kernel::resource::Action const& action,
+                                   kernel::resource::Action::State /* previous */)
+{
+  int n = action.get_variable()->get_number_of_constraint();
+
+  for (int i = 0; i < n; i++) {
+    double value = action.get_variable()->get_value() * action.get_variable()->get_constraint_weight(i);
+    /* Beware of composite actions: ptasks put links and cpus together. Extra pb: we cannot dynamic_cast from void* */
+    kernel::resource::Resource* resource = action.get_variable()->get_constraint(i)->get_id();
+    const kernel::resource::Cpu* cpu     = dynamic_cast<kernel::resource::Cpu*>(resource);
+
+    if (cpu != nullptr)
+      resource_set_utilization("HOST", "speed_used", cpu->get_cname(), action.get_category(), value,
+                               action.get_last_update(), SIMIX_get_clock() - action.get_last_update());
+
+    const kernel::resource::LinkImpl* link = dynamic_cast<kernel::resource::LinkImpl*>(resource);
+
+    if (link != nullptr)
+      resource_set_utilization("LINK", "bandwidth_used", link->get_cname(), action.get_category(), value,
+                               action.get_last_update(), SIMIX_get_clock() - action.get_last_update());
+  }
+}
+
+static void on_link_bandwidth_change(s4u::Link const& link)
+{
+  Container::by_name(link.get_name())
+      ->get_variable("bandwidth")
+      ->set_event(surf_get_clock(), sg_bandwidth_factor * link.get_bandwidth());
+}
+
+static void on_netpoint_creation(kernel::routing::NetPoint const& netpoint)
+{
+  if (netpoint.is_router())
+    new RouterContainer(netpoint.get_name(), currentContainer.back());
+}
+
+static void on_platform_created()
+{
+  currentContainer.clear();
+  std::set<std::string>* filter = new std::set<std::string>();
+  XBT_DEBUG("Starting graph extraction.");
+  recursiveGraphExtraction(s4u::Engine::get_instance()->get_netzone_root(), Container::get_root(), filter);
+  XBT_DEBUG("Graph extraction finished.");
+  delete filter;
+  TRACE_paje_dump_buffer(true);
+}
+
+static void on_actor_creation(s4u::Actor const& actor)
+{
+  const Container* root = Container::get_root();
+  Container* container  = Container::by_name(actor.get_host()->get_name());
+
+  container->create_child(instr_pid(actor), "ACTOR");
+  ContainerType* actor_type = container->type_->by_name_or_create<ContainerType>("ACTOR");
+  StateType* state          = actor_type->by_name_or_create<StateType>("ACTOR_STATE");
+  state->add_entity_value("suspend", "1 0 1");
+  state->add_entity_value("sleep", "1 1 0");
+  state->add_entity_value("receive", "1 0 0");
+  state->add_entity_value("send", "0 0 1");
+  state->add_entity_value("execute", "0 1 1");
+  root->type_->by_name_or_create("ACTOR_LINK", actor_type, actor_type);
+  root->type_->by_name_or_create("ACTOR_TASK_LINK", actor_type, actor_type);
+
+  std::string container_name = instr_pid(actor);
+  actor.on_exit([container_name](bool failed) {
+    if (failed)
+      // kill means that this actor no longer exists, let's destroy it
+      Container::by_name(container_name)->remove_from_parent();
+  });
+}
+
+static void on_actor_host_change(s4u::Actor const& actor, s4u::Host const& /*previous_location*/)
+{
+  static long long int counter = 0;
+  container_t container        = Container::by_name(instr_pid(actor));
+  LinkType* link               = Container::get_root()->get_link("ACTOR_LINK");
+
+  // start link
+  link->start_event(container, "M", std::to_string(counter));
+  // destroy existing container of this process
+  container->remove_from_parent();
+  // create new container on the new_host location
+  Container::by_name(actor.get_host()->get_name())->create_child(instr_pid(actor), "ACTOR");
+  // end link
+  link->end_event(Container::by_name(instr_pid(actor)), "M", std::to_string(counter));
+  counter++;
+}
+
+static void on_vm_creation(s4u::Host const& host)
+{
+  const Container* container = new HostContainer(host, currentContainer.back());
+  const Container* root      = Container::get_root();
+  ContainerType* vm          = container->type_->by_name_or_create<ContainerType>("VM");
+  StateType* state           = vm->by_name_or_create<StateType>("VM_STATE");
+  state->add_entity_value("suspend", "1 0 1");
+  state->add_entity_value("sleep", "1 1 0");
+  state->add_entity_value("receive", "1 0 0");
+  state->add_entity_value("send", "0 0 1");
+  state->add_entity_value("execute", "0 1 1");
+  root->type_->by_name_or_create("VM_LINK", vm, vm);
+  root->type_->by_name_or_create("VM_ACTOR_LINK", vm, vm);
+}
+
+void define_callbacks()
+{
+  // always need the callbacks to zones (we need only the root zone), to create the rootContainer and the rootType
+  // properly
+  if (TRACE_needs_platform()) {
+    s4u::Engine::on_platform_created.connect(on_platform_created);
+    s4u::Host::on_creation.connect(on_host_creation);
+    s4u::Host::on_speed_change.connect(on_host_speed_change);
+    s4u::Link::on_creation.connect(on_link_creation);
+    s4u::Link::on_bandwidth_change.connect(on_link_bandwidth_change);
+    s4u::NetZone::on_seal.connect([](s4u::NetZone const& /*netzone*/) { currentContainer.pop_back(); });
+    kernel::routing::NetPoint::on_creation.connect(on_netpoint_creation);
+  }
+  s4u::NetZone::on_creation.connect(on_netzone_creation);
+  s4u::Engine::on_time_advance.connect([](double /*time_delta*/) { TRACE_paje_dump_buffer(false); });
+
+  kernel::resource::CpuAction::on_state_change.connect(on_action_state_change);
+  s4u::Link::on_communication_state_change.connect(on_action_state_change);
+
+  if (TRACE_actor_is_enabled()) {
+    s4u::Actor::on_creation.connect(on_actor_creation);
+    s4u::Actor::on_destruction.connect([](s4u::Actor const& actor) {
+      auto container = Container::by_name_or_null(instr_pid(actor));
+      if (container != nullptr)
+        container->remove_from_parent();
+    });
+    s4u::Actor::on_suspend.connect([](s4u::Actor const& actor) {
+      Container::by_name(instr_pid(actor))->get_state("ACTOR_STATE")->push_event("suspend");
+    });
+    s4u::Actor::on_resume.connect(
+        [](s4u::Actor const& actor) { Container::by_name(instr_pid(actor))->get_state("ACTOR_STATE")->pop_event(); });
+    s4u::Actor::on_sleep.connect([](s4u::Actor const& actor) {
+      Container::by_name(instr_pid(actor))->get_state("ACTOR_STATE")->push_event("sleep");
+    });
+    s4u::Actor::on_wake_up.connect(
+        [](s4u::Actor const& actor) { Container::by_name(instr_pid(actor))->get_state("ACTOR_STATE")->pop_event(); });
+    s4u::Exec::on_start.connect([](simgrid::s4u::Actor const& actor, s4u::Exec const&) {
+      Container::by_name(instr_pid(actor))->get_state("ACTOR_STATE")->push_event("execute");
+    });
+    s4u::Exec::on_completion.connect([](s4u::Actor const& actor, s4u::Exec const&) {
+      Container::by_name(instr_pid(actor))->get_state("ACTOR_STATE")->pop_event();
+    });
+    s4u::Comm::on_sender_start.connect([](s4u::Actor const& actor) {
+      Container::by_name(instr_pid(actor))->get_state("ACTOR_STATE")->push_event("send");
+    });
+    s4u::Comm::on_receiver_start.connect([](s4u::Actor const& actor) {
+      Container::by_name(instr_pid(actor))->get_state("ACTOR_STATE")->push_event("receive");
+    });
+    s4u::Comm::on_completion.connect(
+        [](s4u::Actor const& actor) { Container::by_name(instr_pid(actor))->get_state("ACTOR_STATE")->pop_event(); });
+    s4u::Actor::on_host_change.connect(on_actor_host_change);
+  }
+
+  if (TRACE_vm_is_enabled()) {
+    s4u::Host::on_creation.connect(on_vm_creation);
+    s4u::VirtualMachine::on_start.connect([](s4u::VirtualMachine const& vm) {
+      Container::by_name(vm.get_name())->get_state("VM_STATE")->push_event("start");
+    });
+    s4u::VirtualMachine::on_started.connect(
+        [](s4u::VirtualMachine const& vm) { Container::by_name(vm.get_name())->get_state("VM_STATE")->pop_event(); });
+    s4u::VirtualMachine::on_suspend.connect([](s4u::VirtualMachine const& vm) {
+      Container::by_name(vm.get_name())->get_state("VM_STATE")->push_event("suspend");
+    });
+    s4u::VirtualMachine::on_resume.connect(
+        [](s4u::VirtualMachine const& vm) { Container::by_name(vm.get_name())->get_state("VM_STATE")->pop_event(); });
+    s4u::Host::on_destruction.connect(
+        [](s4u::Host const& host) { Container::by_name(host.get_name())->remove_from_parent(); });
+  }
+}
+} // namespace instr
+} // namespace simgrid

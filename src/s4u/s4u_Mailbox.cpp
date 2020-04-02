@@ -44,6 +44,15 @@ bool Mailbox::listen()
   return not this->empty() || (pimpl_->permanent_receiver_ && not pimpl_->done_comm_queue_.empty());
 }
 
+aid_t Mailbox::listen_from()
+{
+  kernel::activity::CommImplPtr comm = front();
+  if (comm && comm->src_actor_)
+    return comm->src_actor_->get_pid();
+  else
+    return -1;
+}
+
 bool Mailbox::ready()
 {
   bool comm_ready = false;
@@ -201,14 +210,28 @@ void* sg_mailbox_get(sg_mailbox_t mailbox)
   return mailbox->get();
 }
 
+sg_comm_t sg_mailbox_get_async(sg_mailbox_t mailbox, void** data)
+{
+  auto comm = mailbox->get_async(data);
+  comm->add_ref();
+  return comm.get();
+}
+
 void sg_mailbox_put(sg_mailbox_t mailbox, void* payload, long simulated_size_in_bytes)
 {
-  return mailbox->put(payload, simulated_size_in_bytes);
+  mailbox->put(payload, simulated_size_in_bytes);
 }
 
 sg_comm_t sg_mailbox_put_async(sg_mailbox_t mailbox, void* payload, long simulated_size_in_bytes)
 {
   auto comm = mailbox->put_async(payload, simulated_size_in_bytes);
+  comm->add_ref();
+  return comm.get();
+}
+
+sg_comm_t sg_mailbox_put_init(sg_mailbox_t mailbox, void* payload, long simulated_size_in_bytes)
+{
+  auto comm = mailbox->put_init(payload, simulated_size_in_bytes);
   comm->add_ref();
   return comm.get();
 }

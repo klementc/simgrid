@@ -59,7 +59,8 @@ cmake -Denable_documentation=OFF -Denable_lua=ON \
       -Denable_jedule=ON -Denable_mallocators=ON \
       -Denable_smpi=ON -Denable_smpi_MPICH3_testsuite=ON -Denable_model-checking=ON \
       -Denable_smpi_papi=ON \
-      -Denable_memcheck=OFF -Denable_memcheck_xml=OFF -Denable_smpi_ISP_testsuite=ON -Denable_coverage=ON $WORKSPACE
+      -Denable_memcheck=OFF -Denable_memcheck_xml=OFF -Denable_smpi_ISP_testsuite=ON \
+      -Denable_coverage=ON -DLTO_EXTRA_FLAG="auto" -DCMAKE_EXPORT_COMPILE_COMMANDS=ON $WORKSPACE
 
 #build with sonarqube scanner wrapper
 /home/ci/build-wrapper-linux-x86/build-wrapper-linux-x86-64 --out-dir bw-outputs make -j$NUMPROC tests
@@ -94,12 +95,18 @@ if [ -f Testing/TAG ] ; then
   /usr/bin/python3-coverage combine
   /usr/bin/python3-coverage xml -i -o ./python_coverage.xml
 
-   cd $WORKSPACE
-   #convert all gcov reports to xml cobertura reports
-   gcovr -r . --xml-pretty -e teshsuite -u -o $BUILDFOLDER/xml_coverage.xml
-   xsltproc $WORKSPACE/tools/jenkins/ctest2junit.xsl build/Testing/$( head -n 1 < build/Testing/TAG )/Test.xml > CTestResults_memcheck.xml
+  cd $WORKSPACE
+  #convert all gcov reports to xml cobertura reports
+  gcovr -r . --xml-pretty -e teshsuite -u -o $BUILDFOLDER/xml_coverage.xml
+  xsltproc $WORKSPACE/tools/jenkins/ctest2junit.xsl build/Testing/$( head -n 1 < build/Testing/TAG )/Test.xml > CTestResults_memcheck.xml
 
-   #generate sloccount report
-   sloccount --duplicates --wide --details $WORKSPACE | grep -v -e '.git' -e 'mpich3-test' -e 'sloccount.sc' -e 'isp/umpire' -e 'build/' -e 'xml_coverage.xml' -e 'CTestResults_memcheck.xml' -e 'DynamicAnalysis.xml' > $WORKSPACE/sloccount.sc
+  #generate sloccount report
+  sloccount --duplicates --wide --details $WORKSPACE | grep -v -e '.git' -e 'mpich3-test' -e 'sloccount.sc' -e 'isp/umpire' -e 'build/' -e 'xml_coverage.xml' -e 'CTestResults_memcheck.xml' -e 'DynamicAnalysis.xml' > $WORKSPACE/sloccount.sc
+
+  #generate PVS-studio report
+  EXCLUDEDPATH="-e $WORKSPACE/src/include/catch.hpp -e $WORKSPACE/teshsuite/smpi/mpich3-test/ -e $WORKSPACE/teshsuite/smpi/isp/ -e *_dtd.c -e *_dtd.h -e *yy.c -e  $WORKSPACE/src/xbt/automaton/ -e $WORKSPACE/src/smpi/colls/ -e $WORKSPACE/examples/smpi/NAS/ -e $WORKSPACE/examples/smpi/gemm/gemm.c -e $WORKSPACE/src/msg/ -e $WORKSPACE/include/msg/ -e $WORKSPACE/examples/deprecated/ -e $WORKSPACE/teshsuite/msg/"
+  pvs-studio-analyzer analyze -f $BUILDFOLDER/compile_commands.json -o $WORKSPACE/pvs.log $EXCLUDEDPATH -j$NUMPROC
+  #disable V1042 (copyleft), V521 (commas in catch.hpp)
+  plog-converter -t xml -o $WORKSPACE/pvs.plog -d V1042,V521 $WORKSPACE/pvs.log
 
 fi || exit 42

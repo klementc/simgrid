@@ -67,7 +67,7 @@ with :cpp:func:`simgrid::s4u::Engine::set_config` or :cpp:func:`MSG_config`.
    int main(int argc, char *argv[]) {
      simgrid::s4u::Engine e(&argc, argv);
 
-     e->set_config("Item:Value");
+     e.set_config("Item:Value");
 
      // Rest of your code
    }
@@ -124,6 +124,8 @@ Existing Configuration Items
 - **network/bandwidth-factor:** :ref:`cfg=network/bandwidth-factor`
 - **network/crosstraffic:** :ref:`cfg=network/crosstraffic`
 - **network/latency-factor:** :ref:`cfg=network/latency-factor`
+- **network/loopback-lat:** :ref:`cfg=network/loopback`
+- **network/loopback-bw:** :ref:`cfg=network/loopback`
 - **network/maxmin-selective-update:** :ref:`Network Optimization Level <options_model_optim>`
 - **network/model:** :ref:`options_model_select`
 - **network/optim:** :ref:`Network Optimization Level <options_model_optim>`
@@ -394,6 +396,16 @@ This is activated through the ``network/crosstraffic`` item, that
 can be set to 0 (disable this feature) or 1 (enable it).
 
 Note that with the default host model this option is activated by default.
+
+.. _cfg=network/loopback:
+
+Configuring loopback link
+^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Several network model provide an implicit loopback link to account for local 
+communication on a host. By default it has a 10GBps bandwidth and a null latency.
+This can be changed with ``network/loopback-lat`` and ``network/loopback-bw`` 
+items.
 
 .. _cfg=smpi/async-small-thresh:
 
@@ -782,10 +794,16 @@ stacks), leading to segfaults with corrupted stack traces.
 If you want to push the scalability limits of your code, you might
 want to reduce the ``contexts/stack-size`` item. Its default value is
 8192 (in KiB), while our Chord simulation works with stacks as small
-as 16 KiB, for example. This *setting is ignored* when using the
-thread factory. Instead, you should compile SimGrid and your
-application with ``-fsplit-stack``. Note that this compilation flag is
-not compatible with the model checker right now.
+as 16 KiB, for example. You can ensure that some actors have a specific
+size by simply changing the value of this configuration item before
+creating these actors. The :cpp:func:`simgrid::s4u::Engine::set_config` 
+functions are handy for that.
+
+This *setting is ignored* when using the thread factory (because there
+is no way to modify the stack size with C++ system threads). Instead,
+you should compile SimGrid and your application with
+``-fsplit-stack``. Note that this compilation flag is not compatible
+with the model checker right now.
 
 The operating system should only allocate memory for the pages of the
 stack which are actually used and you might not need to use this in

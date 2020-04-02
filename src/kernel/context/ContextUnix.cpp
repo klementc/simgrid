@@ -49,18 +49,19 @@ UContext* UContextFactory::create_context(std::function<void()>&& code, actor::A
 UContext::UContext(std::function<void()>&& code, actor::ActorImpl* actor, SwappedContextFactory* factory)
     : SwappedContext(std::move(code), actor, factory)
 {
+  XBT_VERB("Creating a context of stack %uMb", actor->get_stacksize() / 1024 / 1024);
   /* if the user provided a function for the actor then use it. If not, nothing to do for maestro. */
   if (has_code()) {
     getcontext(&this->uc_);
     this->uc_.uc_link = nullptr;
     this->uc_.uc_stack.ss_sp   = sg_makecontext_stack_addr(get_stack());
-    this->uc_.uc_stack.ss_size = sg_makecontext_stack_size(smx_context_stack_size);
+    this->uc_.uc_stack.ss_size = sg_makecontext_stack_size(actor->get_stacksize());
     // Makecontext expects integer arguments; we want to pass a pointer.
     // This context address is decomposed into a series of integers, which are passed as arguments to makecontext.
 
     int ctx_addr[CTX_ADDR_LEN]{};
     UContext* arg = this;
-    memcpy(ctx_addr, &arg, sizeof this);
+    memcpy(ctx_addr, &arg, sizeof arg);
     makecontext(&this->uc_, (void (*)())sysv_ctx_wrapper, 2, ctx_addr[0], ctx_addr[1]);
 
 #if SIMGRID_HAVE_MC

@@ -21,7 +21,10 @@ class Container {
   std::string name_; /* Unique name of this container */
 
 public:
-  Container(const std::string& name, const std::string& type_name, Container* father);
+  static xbt::signal<void(Container&)> on_creation;
+  static xbt::signal<void(Container&)> on_destruction;
+
+  explicit Container(const std::string& name, const std::string& type_name, Container* father);
   Container(const Container&) = delete;
   Container& operator=(const Container&) = delete;
   virtual ~Container();
@@ -29,16 +32,13 @@ public:
   Type* type_; /* Type of this container */
   Container* father_;
   std::map<std::string, Container*> children_;
-  kernel::routing::NetPoint* netpoint_ = nullptr;
 
   static Container* by_name_or_null(const std::string& name);
   static Container* by_name(const std::string& name);
   const std::string& get_name() const { return name_; }
-  const char* get_cname() { return name_.c_str(); }
-  long long int get_id() { return id_; }
+  const char* get_cname() const { return name_.c_str(); }
+  long long int get_id() const { return id_; }
   void remove_from_parent();
-  void log_creation();
-  void log_destruction();
 
   StateType* get_state(const std::string& name);
   LinkType* get_link(const std::string& name);
@@ -61,6 +61,6 @@ class HostContainer : public Container {
 public:
   HostContainer(simgrid::s4u::Host const& host, NetZoneContainer* father);
 };
-}
-}
+} // namespace instr
+} // namespace simgrid
 #endif

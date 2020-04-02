@@ -19,10 +19,17 @@ set(libsimgrid-java_version "${release_version}")
 
 # Basic checks on cmake
 cmake_minimum_required(VERSION 3.5)
+#for lto, to avoid warning (should be removed when switching to requiring cmake >= 3.9)
+if(NOT CMAKE_VERSION VERSION_LESS "3.9")
+  cmake_policy(SET CMP0069 NEW)
+endif()
 message(STATUS "Cmake version ${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION}.${CMAKE_PATCH_VERSION}")
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_HOME_DIRECTORY}/tools/cmake/Modules)
 
-project(SimGrid C CXX)
+project(simgrid C CXX)
+
+# customizable installation directories
+include(GNUInstallDirs)
 
 ## Save compiler flags preset with environment variables CFLAGS or CXXFLAGS;
 ## they will used within smpicc, smpicxx.
@@ -119,7 +126,7 @@ else()
   set(LIB_EXE "so")
 endif()
 
-execute_process(COMMAND ${CMAKE_LINKER} -version OUTPUT_VARIABLE LINKER_VERSION ERROR_VARIABLE LINKER_VERSION)
+execute_process(COMMAND ${CMAKE_LINKER} -v OUTPUT_VARIABLE LINKER_VERSION ERROR_VARIABLE LINKER_VERSION)
 string(REGEX MATCH "[0-9].[0-9]*" LINKER_VERSION "${LINKER_VERSION}")
 
 ### Find programs and paths
@@ -190,6 +197,8 @@ IF(CMAKE_SYSTEM_PROCESSOR MATCHES ".86|AMD64|amd64")
   ENDIF()
   if (WIN32)
     message(STATUS "Disable fast raw contexts on Windows.")
+  elseif(CMAKE_SIZEOF_VOID_P EQUAL 4 AND CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64")
+    message(STATUS "Disable fast raw contexts on x32 ABI.")
   else()
     set(HAVE_RAW_CONTEXTS 1)
   endif()
@@ -546,10 +555,10 @@ file(READ ${CMAKE_HOME_DIRECTORY}/src/smpi/smpitools.sh SMPITOOLS_SH) # Definiti
 
 ### SMPI script used when simgrid is installed
 set(exec_prefix ${CMAKE_INSTALL_PREFIX})
-set(includeflag "-I${CMAKE_INSTALL_PREFIX}/include -I${CMAKE_INSTALL_PREFIX}/include/smpi")
-set(includedir "${CMAKE_INSTALL_PREFIX}/include")
-set(libdir ${exec_prefix}/lib)
-set(CMAKE_SMPI_COMMAND "export LD_LIBRARY_PATH=\"${CMAKE_INSTALL_PREFIX}/lib")
+set(includeflag "-I${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_INCLUDEDIR} -I${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_INCLUDEDIR}/smpi")
+set(includedir "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_INCLUDEDIR}")
+set(libdir "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}")
+set(CMAKE_SMPI_COMMAND "export LD_LIBRARY_PATH=\"${CMAKE_INSTALL_LIBDIR}")
 if(NS3_LIBRARY_PATH)
   set(CMAKE_SMPI_COMMAND "${CMAKE_SMPI_COMMAND}:${NS3_LIBRARY_PATH}")
 endif()
@@ -847,7 +856,15 @@ if(enable_python)
     target_link_libraries(python-bindings PUBLIC simgrid)
     set_target_properties(python-bindings PROPERTIES
                           LIBRARY_OUTPUT_NAME simgrid
-                          CXX_VISIBILITY_PRESET "default")
+                          CXX_VISIBILITY_PRESET "default"
+                          INTERPROCEDURAL_OPTIMIZATION FALSE)
+    # LTO is disabled here from the python bindings because this makes a
+    # cmake warning about CMP0069 even when this policy is set. This
+    # problem may be in cmake, in pybind11 or even in our code, not sure.
+    # It may get eventually solved in cmake or pybind11. Or not.
+    # The sure thing is that our python bindings are in one file only,
+    # so there is no need for LTO here. Problem solved :)
+
     add_dependencies(tests python-bindings)
     set_property(TARGET python-bindings
                  APPEND PROPERTY INCLUDE_DIRECTORIES "${INTERNAL_INCLUDES}")
