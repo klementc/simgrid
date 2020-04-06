@@ -71,7 +71,7 @@ namespace simgrid {
 
           //init_watts_range_list();
 
-          double duration = surf_ge_tclock()-prev_update_;
+          double duration = surf_get_clock()-prev_update_;
           prev_update_ = surf_get_clock();
 
           simgrid::kernel::resource::NetworkWifiLink* wifi_link = static_cast<simgrid::kernel::resource::NetworkWifiLink*>(link_->get_impl());
