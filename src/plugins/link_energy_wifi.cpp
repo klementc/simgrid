@@ -81,9 +81,8 @@ namespace simgrid {
           // 1Tx from sender
           // 1Rx for receiver
           // ??
-	  eDyn_ += pIdle_*duration*(1 + wifi_link->get_nb_hosts_on_link());
-	  eStat_ += ((pTx_-pIdle_) + (pRx_-pIdle_)) * duration *
-	    (link_->get_usage()/link_->get_bandwidth());
+	  eStat_ += pIdle_*duration*(1 + wifi_link->get_nb_hosts_on_link());
+	  eDyn_ += ((pTx_-pIdle_) + (pRx_-pIdle_)) * duration *(link_->get_usage()/link_->get_bandwidth());
           eTot_ += pIdle_*duration*(1 + wifi_link->get_nb_hosts_on_link()) +
 	    ((pTx_-pIdle_) + (pRx_-pIdle_)) * duration *
 	    (link_->get_usage()/link_->get_bandwidth()); // just as an illustration
@@ -165,7 +164,7 @@ void sg_link_wifi_plugin_init()
   simgrid::s4u::Link::on_destruction.connect([](simgrid::s4u::Link const& link){
       if(link.get_sharing_policy() == simgrid::s4u::Link::SharingPolicy::WIFI){
         link.extension<LinkEnergyWifi>()->update(/*action*/);
-        XBT_INFO("Link %s destroyed, consumed: %f J dyn: %f stat: %f", link.get_cname(), link.extension<LinkEnergyWifi>()->getConsumedEnergy());
+        XBT_INFO("Link %s destroyed, consumed: %f J dyn: %f stat: %f", link.get_cname(), link.extension<LinkEnergyWifi>()->getConsumedEnergy(), link.extension<LinkEnergyWifi>()->getEdyn(), link.extension<LinkEnergyWifi>()->getEstat());
       }
   });
 
