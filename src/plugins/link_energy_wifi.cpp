@@ -35,24 +35,20 @@ namespace simgrid {
 
             void update(/*simgrid::kernel::resource::NetworkAction const&*/);
             inline double getConsumedEnergy(void){return eTot_;}
-	  inline double getEdyn(void) {return eDyn_;}
-	  inline double getEstat(void) {return eStat_;}
-	          void setpIdle(double value) { pIdle_=value;}
-	          void setpTx(double value) {pTx_=value;}
-  	        void setpRx(double value) {pRx_=value;}
-	          void setpSleep(double value) {pSleep_=value;}
+	    void setpIdle(double value) { pIdle_=value;}
+	    void setpTx(double value) {pTx_=value;}
+  	    void setpRx(double value) {pRx_=value;}
+	    void setpSleep(double value) {pSleep_=value;}
             void init_watts_range_list();
 
         private:
             s4u::Link* link_{};
-	  double eStat_   {0.0};
-	  double eDyn_    {0.0};
             double eTot_    {0.0};
             double prev_update_ {0.0};
 
             // Same values as ns3:
             // https://www.nsnam.org/docs/release/3.30/doxygen/classns3_1_1_wifi_radio_energy_model.html#details
-        	  double pIdle_  {0.82};
+            double pIdle_  {0.82};
             double pTx_    {1.14};
             double pRx_    {0.94};
             double pSleep_ {0.10};
@@ -81,8 +77,6 @@ namespace simgrid {
           // 1Tx from sender
           // 1Rx for receiver
           // ??
-	  eStat_ += pIdle_*duration*(1 + wifi_link->get_nb_hosts_on_link());
-	  eDyn_ += ((pTx_-pIdle_) + (pRx_-pIdle_)) * duration *(link_->get_usage()/link_->get_bandwidth());
           eTot_ += pIdle_*duration*(1 + wifi_link->get_nb_hosts_on_link()) +
 	    ((pTx_-pIdle_) + (pRx_-pIdle_)) * duration *
 	    (link_->get_usage()/link_->get_bandwidth()); // just as an illustration
@@ -164,7 +158,7 @@ void sg_link_wifi_plugin_init()
   simgrid::s4u::Link::on_destruction.connect([](simgrid::s4u::Link const& link){
       if(link.get_sharing_policy() == simgrid::s4u::Link::SharingPolicy::WIFI){
         link.extension<LinkEnergyWifi>()->update(/*action*/);
-        XBT_INFO("Link %s destroyed, consumed: %f J dyn: %f stat: %f", link.get_cname(), link.extension<LinkEnergyWifi>()->getConsumedEnergy(), link.extension<LinkEnergyWifi>()->getEdyn(), link.extension<LinkEnergyWifi>()->getEstat());
+        XBT_INFO("Link %s destroyed, consumed: %f J", link.get_cname(), link.extension<LinkEnergyWifi>()->getConsumedEnergy());
       }
   });
 
