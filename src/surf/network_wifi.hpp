@@ -26,8 +26,6 @@ class NetworkWifiLink : public LinkImpl {
   /** @brief A link can have several bandwith attach to it (mostly use by wifi model) */
   std::vector<Metric> bandwidths_;
 
-  int nb_hosts_on_link_{0};
-
   /** @brief Should we use the decay model ? */
   bool use_decay_model_=false;
   /** @brief Wifi ns-3 802.11n average bit rate */
@@ -54,7 +52,7 @@ public:
   void set_bandwidth(double) override { THROW_UNIMPLEMENTED; }
   void set_latency(double) override { THROW_UNIMPLEMENTED; }
 
-  inline int get_nb_hosts_on_link(){return nb_hosts_on_link_;}
+  inline int get_nb_hosts_on_link(){return host_rates_.size();}
 
   void refresh_decay_bandwidths();
   bool toggle_decay_model();
