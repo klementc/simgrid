@@ -51,7 +51,7 @@ private:
   double pTx_{1.14};
   double pRx_{0.94};
   double pSleep_{0.10};
-
+  const double controlDuration_{0.00186754873};
   bool valuesInit_{false};
 };
 
@@ -73,6 +73,8 @@ void LinkEnergyWifi::update(/*simgrid::kernel::resource::NetworkAction const& ac
       static_cast<simgrid::kernel::resource::NetworkWifiLink*>(link_->get_impl());
   wifi_link->get_nb_hosts_on_link();
 
+  // control cost
+  eDyn_+=duration*controlDuration_*wifi_link->get_nb_hosts_on_link()*pRx_;
   /**
    * As in ns3:
    *  - if tx or rx (dyn consumption) i.e. get_usage > 0 -> Pdyn+=duration*(get_nb_hosts_on_link*pRx + 1*pTx)
