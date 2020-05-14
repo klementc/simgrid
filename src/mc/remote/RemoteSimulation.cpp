@@ -5,7 +5,7 @@
 
 #define _FILE_OFFSET_BITS 64 /* needed for pread_whole to work as expected on 32bits */
 
-#include "src/mc/remote/RemoteClient.hpp"
+#include "src/mc/remote/RemoteSimulation.hpp"
 
 #include "src/mc/mc_smx.hpp"
 #include "src/mc/sosp/Snapshot.hpp"
@@ -109,8 +109,7 @@ static const std::vector<std::string> filtered_libraries = {
     "libsasl2",
     "libresolv",
     "libcrypt",
-    "libselinux"
-};
+    "libselinux"};
 
 static bool is_simgrid_lib(const std::string& libname)
 {
@@ -209,13 +208,11 @@ int open_vm(pid_t pid, int flags)
   return open(buffer, flags);
 }
 
-// ***** Process
+// ***** RemoteSimulation
 
-RemoteClient::RemoteClient(pid_t pid, int sockfd) : AddressSpace(this), pid_(pid), channel_(sockfd), running_(true)
-{
-}
+RemoteSimulation::RemoteSimulation(pid_t pid) : AddressSpace(this), pid_(pid), running_(true) {}
 
-void RemoteClient::init()
+void RemoteSimulation::init()
 {
   this->memory_map_ = simgrid::xbt::get_memory_map(this->pid_);
   this->init_memory_map_info();
@@ -237,7 +234,7 @@ void RemoteClient::init()
   this->unw_underlying_context    = simgrid::unw::create_context(this->unw_underlying_addr_space, this->pid_);
 }
 
-RemoteClient::~RemoteClient()
+RemoteSimulation::~RemoteSimulation()
 {
   if (this->memory_file >= 0)
     close(this->memory_file);
@@ -257,13 +254,13 @@ RemoteClient::~RemoteClient()
  *  Do not use directly, this is used by the getters when appropriate
  *  in order to have fresh data.
  */
-void RemoteClient::refresh_heap()
+void RemoteSimulation::refresh_heap()
 {
   // Read/dereference/refresh the std_heap pointer:
   if (not this->heap)
     this->heap.reset(new s_xbt_mheap_t());
   this->read_bytes(this->heap.get(), sizeof(mdesc), remote(this->heap_address));
-  this->cache_flags_ |= RemoteClient::cache_heap;
+  this->cache_flags_ |= RemoteSimulation::cache_heap;
 }
 
 /** Refresh the information about the process
@@ -271,20 +268,20 @@ void RemoteClient::refresh_heap()
  *  Do not use directly, this is used by the getters when appropriate
  *  in order to have fresh data.
  * */
-void RemoteClient::refresh_malloc_info()
+void RemoteSimulation::refresh_malloc_info()
 {
   // Refresh process->heapinfo:
-  if (this->cache_flags_ & RemoteClient::cache_malloc)
+  if (this->cache_flags_ & RemoteSimulation::cache_malloc)
     return;
   size_t count = this->heap->heaplimit + 1;
   if (this->heap_info.size() < count)
     this->heap_info.resize(count);
   this->read_bytes(this->heap_info.data(), count * sizeof(malloc_info), remote(this->heap->heapinfo));
-  this->cache_flags_ |= RemoteClient::cache_malloc;
+  this->cache_flags_ |= RemoteSimulation::cache_malloc;
 }
 
 /** @brief Finds the range of the different memory segments and binary paths */
-void RemoteClient::init_memory_map_info()
+void RemoteSimulation::init_memory_map_info()
 {
   XBT_DEBUG("Get debug information ...");
   this->maestro_stack_start_ = nullptr;
@@ -354,7 +351,7 @@ void RemoteClient::init_memory_map_info()
   XBT_DEBUG("Get debug information done !");
 }
 
-std::shared_ptr<simgrid::mc::ObjectInformation> RemoteClient::find_object_info(RemotePtr<void> addr) const
+std::shared_ptr<simgrid::mc::ObjectInformation> RemoteSimulation::find_object_info(RemotePtr<void> addr) const
 {
   for (auto const& object_info : this->object_infos)
     if (addr.address() >= (std::uint64_t)object_info->start && addr.address() <= (std::uint64_t)object_info->end)
@@ -362,7 +359,7 @@ std::shared_ptr<simgrid::mc::ObjectInformation> RemoteClient::find_object_info(R
   return nullptr;
 }
 
-std::shared_ptr<ObjectInformation> RemoteClient::find_object_info_exec(RemotePtr<void> addr) const
+std::shared_ptr<ObjectInformation> RemoteSimulation::find_object_info_exec(RemotePtr<void> addr) const
 {
   for (std::shared_ptr<ObjectInformation> const& info : this->object_infos)
     if (addr.address() >= (std::uint64_t)info->start_exec && addr.address() <= (std::uint64_t)info->end_exec)
@@ -370,7 +367,7 @@ std::shared_ptr<ObjectInformation> RemoteClient::find_object_info_exec(RemotePtr
   return nullptr;
 }
 
-std::shared_ptr<ObjectInformation> RemoteClient::find_object_info_rw(RemotePtr<void> addr) const
+std::shared_ptr<ObjectInformation> RemoteSimulation::find_object_info_rw(RemotePtr<void> addr) const
 {
   for (std::shared_ptr<ObjectInformation> const& info : this->object_infos)
     if (addr.address() >= (std::uint64_t)info->start_rw && addr.address() <= (std::uint64_t)info->end_rw)
@@ -378,7 +375,7 @@ std::shared_ptr<ObjectInformation> RemoteClient::find_object_info_rw(RemotePtr<v
   return nullptr;
 }
 
-simgrid::mc::Frame* RemoteClient::find_function(RemotePtr<void> ip) const
+simgrid::mc::Frame* RemoteSimulation::find_function(RemotePtr<void> ip) const
 {
   std::shared_ptr<simgrid::mc::ObjectInformation> info = this->find_object_info_exec(ip);
   return info ? info->find_function((void*)ip.address()) : nullptr;
@@ -386,7 +383,7 @@ simgrid::mc::Frame* RemoteClient::find_function(RemotePtr<void> ip) const
 
 /** Find (one occurrence of) the named variable definition
  */
-const simgrid::mc::Variable* RemoteClient::find_variable(const char* name) const
+const simgrid::mc::Variable* RemoteSimulation::find_variable(const char* name) const
 {
   // First lookup the variable in the executable shared object.
   // A global variable used directly by the executable code from a library
@@ -408,7 +405,7 @@ const simgrid::mc::Variable* RemoteClient::find_variable(const char* name) const
   return nullptr;
 }
 
-void RemoteClient::read_variable(const char* name, void* target, size_t size) const
+void RemoteSimulation::read_variable(const char* name, void* target, size_t size) const
 {
   const simgrid::mc::Variable* var = this->find_variable(name);
   xbt_assert(var, "Variable %s not found", name);
@@ -419,7 +416,7 @@ void RemoteClient::read_variable(const char* name, void* target, size_t size) co
   this->read_bytes(target, size, remote(var->address));
 }
 
-std::string RemoteClient::read_string(RemotePtr<char> address) const
+std::string RemoteSimulation::read_string(RemotePtr<char> address) const
 {
   if (not address)
     return {};
@@ -443,7 +440,8 @@ std::string RemoteClient::read_string(RemotePtr<char> address) const
   }
 }
 
-void* RemoteClient::read_bytes(void* buffer, std::size_t size, RemotePtr<void> address, ReadOptions /*options*/) const
+void* RemoteSimulation::read_bytes(void* buffer, std::size_t size, RemotePtr<void> address,
+                                   ReadOptions /*options*/) const
 {
   if (pread_whole(this->memory_file, buffer, size, (size_t)address.address()) < 0)
     xbt_die("Read at %p from process %lli failed", (void*)address.address(), (long long)this->pid_);
@@ -456,13 +454,13 @@ void* RemoteClient::read_bytes(void* buffer, std::size_t size, RemotePtr<void> a
  *  @param len      data size
  *  @param address  target process memory address (target)
  */
-void RemoteClient::write_bytes(const void* buffer, size_t len, RemotePtr<void> address)
+void RemoteSimulation::write_bytes(const void* buffer, size_t len, RemotePtr<void> address)
 {
   if (pwrite_whole(this->memory_file, buffer, len, (size_t)address.address()) < 0)
     xbt_die("Write to process %lli failed", (long long)this->pid_);
 }
 
-void RemoteClient::clear_bytes(RemotePtr<void> address, size_t len)
+void RemoteSimulation::clear_bytes(RemotePtr<void> address, size_t len)
 {
   pthread_once(&zero_buffer_flag, zero_buffer_init);
   while (len) {
@@ -473,7 +471,7 @@ void RemoteClient::clear_bytes(RemotePtr<void> address, size_t len)
   }
 }
 
-void RemoteClient::ignore_region(std::uint64_t addr, std::size_t size)
+void RemoteSimulation::ignore_region(std::uint64_t addr, std::size_t size)
 {
   IgnoredRegion region;
   region.addr = addr;
@@ -484,7 +482,7 @@ void RemoteClient::ignore_region(std::uint64_t addr, std::size_t size)
     return;
   }
 
-  unsigned int cursor           = 0;
+  unsigned int cursor                 = 0;
   const IgnoredRegion* current_region = nullptr;
 
   int start = 0;
@@ -518,7 +516,7 @@ void RemoteClient::ignore_region(std::uint64_t addr, std::size_t size)
   ignored_regions_.insert(ignored_regions_.begin() + position, region);
 }
 
-void RemoteClient::ignore_heap(IgnoredHeapRegion const& region)
+void RemoteSimulation::ignore_heap(IgnoredHeapRegion const& region)
 {
   if (ignored_heap_.empty()) {
     ignored_heap_.push_back(std::move(region));
@@ -533,7 +531,7 @@ void RemoteClient::ignore_heap(IgnoredHeapRegion const& region)
   // Binary search the position of insertion:
   size_type cursor;
   while (start <= end) {
-    cursor               = start + (end - start) / 2;
+    cursor                     = start + (end - start) / 2;
     auto const& current_region = ignored_heap_[cursor];
     if (current_region.address == region.address)
       return;
@@ -552,7 +550,7 @@ void RemoteClient::ignore_heap(IgnoredHeapRegion const& region)
   ignored_heap_.insert(ignored_heap_.begin() + cursor, region);
 }
 
-void RemoteClient::unignore_heap(void* address, size_t size)
+void RemoteSimulation::unignore_heap(void* address, size_t size)
 {
   typedef std::vector<IgnoredHeapRegion>::size_type size_type;
 
@@ -562,7 +560,7 @@ void RemoteClient::unignore_heap(void* address, size_t size)
   // Binary search:
   size_type cursor;
   while (start <= end) {
-    cursor       = (start + end) / 2;
+    cursor             = (start + end) / 2;
     auto const& region = ignored_heap_[cursor];
     if (region.address < address)
       start = cursor + 1;
@@ -577,7 +575,7 @@ void RemoteClient::unignore_heap(void* address, size_t size)
   }
 }
 
-void RemoteClient::ignore_local_variable(const char* var_name, const char* frame_name)
+void RemoteSimulation::ignore_local_variable(const char* var_name, const char* frame_name)
 {
   if (frame_name != nullptr && strcmp(frame_name, "*") == 0)
     frame_name = nullptr;
@@ -585,19 +583,19 @@ void RemoteClient::ignore_local_variable(const char* var_name, const char* frame
     info->remove_local_variable(var_name, frame_name);
 }
 
-std::vector<simgrid::mc::ActorInformation>& RemoteClient::actors()
+std::vector<simgrid::mc::ActorInformation>& RemoteSimulation::actors()
 {
   this->refresh_simix();
   return smx_actors_infos;
 }
 
-std::vector<simgrid::mc::ActorInformation>& RemoteClient::dead_actors()
+std::vector<simgrid::mc::ActorInformation>& RemoteSimulation::dead_actors()
 {
   this->refresh_simix();
   return smx_dead_actors_infos;
 }
 
-void RemoteClient::dump_stack()
+void RemoteSimulation::dump_stack()
 {
   unw_addr_space_t as = unw_create_addr_space(&_UPT_accessors, BYTE_ORDER);
   if (as == nullptr) {
@@ -625,15 +623,5 @@ void RemoteClient::dump_stack()
   _UPT_destroy(context);
   unw_destroy_addr_space(as);
 }
-
-bool RemoteClient::actor_is_enabled(aid_t pid)
-{
-  s_mc_message_actor_enabled_t msg{MC_MESSAGE_ACTOR_ENABLED, pid};
-  process()->get_channel().send(msg);
-  char buff[MC_MESSAGE_LENGTH];
-  ssize_t received = process()->get_channel().receive(buff, MC_MESSAGE_LENGTH, true);
-  xbt_assert(received == sizeof(s_mc_message_int_t), "Unexpected size in answer to ACTOR_ENABLED");
-  return ((s_mc_message_int_t*)buff)->value;
-}
-}
-}
+} // namespace mc
+} // namespace simgrid

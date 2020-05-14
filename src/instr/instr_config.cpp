@@ -9,7 +9,6 @@
 #include "simgrid/version.h"
 #include "src/instr/instr_private.hpp"
 #include "surf/surf.hpp"
-#include "xbt/virtu.h" /* xbt::cmdline */
 
 #include <sys/stat.h>
 #ifdef WIN32
@@ -88,8 +87,6 @@ static simgrid::config::Flag<bool> trace_disable_link{"tracing/disable_link",
                                                       "Do not trace link bandwidth and latency.", false};
 static simgrid::config::Flag<bool> trace_disable_power{"tracing/disable_power", "Do not trace host power.", false};
 
-simgrid::instr::TraceFormat simgrid::instr::trace_format = simgrid::instr::TraceFormat::Paje;
-
 bool TRACE_needs_platform ()
 {
   return TRACE_actor_is_enabled() || TRACE_vm_is_enabled() || TRACE_categorized() || TRACE_uncategorized() ||
@@ -166,24 +163,9 @@ bool TRACE_disable_speed()
   return trace_disable_power && trace_enabled;
 }
 
-bool TRACE_basic ()
-{
-  return trace_basic && trace_enabled;
-}
-
 bool TRACE_display_sizes ()
 {
   return trace_display_sizes && trace_smpi_enabled && trace_enabled;
-}
-
-int TRACE_precision ()
-{
-  return simgrid::config::get_value<int>("tracing/precision");
-}
-
-std::string TRACE_get_filename()
-{
-  return simgrid::config::get_value<std::string>("tracing/filename");
 }
 
 static void print_line(const char* option, const char* desc, const char* longdesc)
@@ -227,16 +209,21 @@ void TRACE_help()
 
 namespace simgrid {
 namespace instr {
-
 static bool trace_active = false;
+TraceFormat trace_format = TraceFormat::Paje;
+int trace_precision;
+
 /*************
  * Callbacks *
  *************/
 xbt::signal<void(Container&)> Container::on_creation;
 xbt::signal<void(Container&)> Container::on_destruction;
-xbt::signal<void(EntityValue&)> EntityValue::on_creation;
 xbt::signal<void(Type&, e_event_type)> Type::on_creation;
 xbt::signal<void(LinkType&, Type&, Type&)> LinkType::on_creation;
+xbt::signal<void(PajeEvent&)> PajeEvent::on_creation;
+xbt::signal<void(PajeEvent&)> PajeEvent::on_destruction;
+xbt::signal<void(StateEvent&)> StateEvent::on_destruction;
+xbt::signal<void(EntityValue&)> EntityValue::on_creation;
 
 static void on_container_creation_paje(Container& c)
 {
@@ -245,7 +232,7 @@ static void on_container_creation_paje(Container& c)
 
   XBT_DEBUG("%s: event_type=%u, timestamp=%f", __func__, PAJE_CreateContainer, timestamp);
 
-  stream << std::fixed << std::setprecision(TRACE_precision()) << PAJE_CreateContainer << " ";
+  stream << std::fixed << std::setprecision(trace_precision) << PAJE_CreateContainer << " ";
   stream << timestamp << " " << c.get_id() << " " << c.type_->get_id() << " " << c.father_->get_id() << " \"";
   if (c.get_name().find("rank-") != 0)
     stream << c.get_name() << "\"";
@@ -259,10 +246,6 @@ static void on_container_creation_paje(Container& c)
 
 static void on_container_destruction_paje(Container& c)
 {
-  // obligation to dump previous events because they might reference the container that is about to be destroyed
-  TRACE_last_timestamp_to_dump = SIMIX_get_clock();
-  TRACE_paje_dump_buffer(true);
-
   // trace my destruction, but not if user requests so or if the container is root
   if (not trace_disable_destroy && &c != Container::get_root()) {
     std::stringstream stream;
@@ -270,7 +253,7 @@ static void on_container_destruction_paje(Container& c)
 
     XBT_DEBUG("%s: event_type=%u, timestamp=%f", __func__, PAJE_DestroyContainer, timestamp);
 
-    stream << std::fixed << std::setprecision(TRACE_precision()) << PAJE_DestroyContainer << " ";
+    stream << std::fixed << std::setprecision(trace_precision) << PAJE_DestroyContainer << " ";
     stream << timestamp << " " << c.type_->get_id() << " " << c.get_id();
     XBT_DEBUG("Dump %s", stream.str().c_str());
     tracing_file << stream.str() << std::endl;
@@ -305,12 +288,7 @@ static void on_container_creation_ti(Container& c)
 
 static void on_container_destruction_ti(Container& c)
 {
-  // obligation to dump previous events because they might reference the container that is about to be destroyed
-  TRACE_last_timestamp_to_dump = SIMIX_get_clock();
-  TRACE_paje_dump_buffer(true);
-
   if (not trace_disable_destroy && &c != Container::get_root()) {
-    XBT_DEBUG("%s: event_type=%u, timestamp=%f", __func__, PAJE_DestroyContainer, SIMIX_get_clock());
     if (not simgrid::config::get_value<bool>("tracing/smpi/format/ti-one-file") || tracing_files.size() == 1) {
       tracing_files.at(&c)->close();
       delete tracing_files.at(&c);
@@ -323,12 +301,32 @@ static void on_entity_value_creation(EntityValue& value)
 {
   std::stringstream stream;
   XBT_DEBUG("%s: event_type=%u", __func__, PAJE_DefineEntityValue);
-  stream << std::fixed << std::setprecision(TRACE_precision()) << PAJE_DefineEntityValue;
+  stream << std::fixed << std::setprecision(trace_precision) << PAJE_DefineEntityValue;
   stream << " " << value.get_id() << " " << value.get_father()->get_id() << " " << value.get_name();
   if (not value.get_color().empty())
     stream << " \"" << value.get_color() << "\"";
   XBT_DEBUG("Dump %s", stream.str().c_str());
   tracing_file << stream.str() << std::endl;
+}
+
+static void on_event_creation(PajeEvent& event)
+{
+  XBT_DEBUG("%s: event_type=%u, timestamp=%.*f", __func__, event.eventType_, trace_precision, event.timestamp_);
+  event.stream_ << std::fixed << std::setprecision(trace_precision);
+  event.stream_ << event.eventType_ << " " << event.timestamp_ << " ";
+  event.stream_ << event.get_type()->get_id() << " " << event.get_container()->get_id();
+}
+
+static void on_event_destruction(PajeEvent& event)
+{
+  XBT_DEBUG("Dump %s", event.stream_.str().c_str());
+  tracing_file << event.stream_.str() << std::endl;
+}
+
+static void on_state_event_destruction(StateEvent& event)
+{
+  if (event.has_extra())
+    *tracing_files.at(event.get_container()) << event.stream_.str() << std::endl;
 }
 
 static void on_type_creation(Type& type, e_event_type event_type)
@@ -337,8 +335,8 @@ static void on_type_creation(Type& type, e_event_type event_type)
     return; // this kind of type has to be handled differently
 
   std::stringstream stream;
-  stream << std::fixed << std::setprecision(TRACE_precision());
-  XBT_DEBUG("%s: event_type=%u, timestamp=%.*f", __func__, event_type, TRACE_precision(), 0.);
+  stream << std::fixed << std::setprecision(trace_precision);
+  XBT_DEBUG("%s: event_type=%u, timestamp=%.*f", __func__, event_type, trace_precision, 0.);
   stream << event_type << " " << type.get_id() << " " << type.get_father()->get_id() << " " << type.get_name();
   if (type.is_colored())
     stream << " \"" << type.get_color() << "\"";
@@ -349,61 +347,47 @@ static void on_type_creation(Type& type, e_event_type event_type)
 static void on_link_type_creation(Type& type, Type& source, Type& dest)
 {
   std::stringstream stream;
-  XBT_DEBUG("%s: event_type=%u, timestamp=%.*f", __func__, PAJE_DefineLinkType, TRACE_precision(), 0.);
+  XBT_DEBUG("%s: event_type=%u, timestamp=%.*f", __func__, PAJE_DefineLinkType, trace_precision, 0.);
   stream << PAJE_DefineLinkType << " " << type.get_id() << " " << type.get_father()->get_id();
   stream << " " << source.get_id() << " " << dest.get_id() << " " << type.get_name();
   XBT_DEBUG("Dump %s", stream.str().c_str());
   tracing_file << stream.str() << std::endl;
 }
+
 static void on_simulation_start()
 {
-  if (trace_active)
+  if (trace_active || not TRACE_is_enabled())
     return;
 
-  // tracing system must be:
-  //    - enabled (with --cfg=tracing:yes)
-  //    - already configured (simgrid::instr::init already called)
-  if (TRACE_is_enabled()) {
-    define_callbacks();
+  define_callbacks();
 
-    XBT_DEBUG("Tracing starts");
+  XBT_DEBUG("Tracing starts");
+  trace_precision = config::get_value<int>("tracing/precision");
 
-    /* init the tracing module to generate the right output */
-    std::string format = config::get_value<std::string>("tracing/smpi/format");
-    XBT_DEBUG("Tracing format %s", format.c_str());
+  /* init the tracing module to generate the right output */
+  std::string format = config::get_value<std::string>("tracing/smpi/format");
+  XBT_DEBUG("Tracing format %s", format.c_str());
 
-    /* Connect the callbacks associated to the creation/destruction of containers*/
-    if (format == "Paje") {
-      Container::on_creation.connect(on_container_creation_paje);
-      Container::on_destruction.connect(on_container_destruction_paje);
-      EntityValue::on_creation.connect(on_entity_value_creation);
-      Type::on_creation.connect(on_type_creation);
-      LinkType::on_creation.connect(on_link_type_creation);
-    } else {
-      Container::on_creation.connect(on_container_creation_ti);
-      Container::on_destruction.connect(on_container_destruction_ti);
-    }
+  /* open the trace file(s) */
+  std::string filename = simgrid::config::get_value<std::string>("tracing/filename");
+  tracing_file.open(filename.c_str(), std::ofstream::out);
+  if (tracing_file.fail()) {
+    throw TracingError(XBT_THROW_POINT,
+                       xbt::string_printf("Tracefile %s could not be opened for writing.", filename.c_str()));
+  }
 
-    /* open the trace file(s) */
-    std::string filename = TRACE_get_filename();
-    tracing_file.open(filename.c_str(), std::ofstream::out);
-    if (tracing_file.fail()) {
-      throw TracingError(XBT_THROW_POINT,
-                         xbt::string_printf("Tracefile %s could not be opened for writing.", filename.c_str()));
-    }
+  XBT_DEBUG("Filename %s is open for writing", filename.c_str());
 
-    XBT_DEBUG("Filename %s is open for writing", filename.c_str());
+  if (format == "Paje") {
+    Container::on_creation.connect(on_container_creation_paje);
+    Container::on_destruction.connect(on_container_destruction_paje);
+    EntityValue::on_creation.connect(on_entity_value_creation);
+    Type::on_creation.connect(on_type_creation);
+    LinkType::on_creation.connect(on_link_type_creation);
+    PajeEvent::on_creation.connect(on_event_creation);
+    PajeEvent::on_destruction.connect(on_event_destruction);
 
-    if (format == "Paje") {
-      /* output generator version */
-      tracing_file << "#This file was generated using SimGrid-" << SIMGRID_VERSION_MAJOR << "." << SIMGRID_VERSION_MINOR
-                   << "." << SIMGRID_VERSION_PATCH << std::endl;
-      tracing_file << "#[";
-      for (auto str : simgrid::xbt::cmdline) {
-        tracing_file << str << " ";
-      }
-      tracing_file << "]" << std::endl;
-    }
+    paje::dump_generator_version();
 
     /* output one line comment */
     std::string comment = simgrid::config::get_value<std::string>("tracing/comment");
@@ -411,17 +395,17 @@ static void on_simulation_start()
       tracing_file << "# " << comment << std::endl;
 
     /* output comment file */
-    dump_comment_file(simgrid::config::get_value<std::string>(OPT_TRACING_COMMENT_FILE));
-
-    if (format == "Paje") {
-      /* output Pajé header */
-      TRACE_header(TRACE_basic(), TRACE_display_sizes());
-    } else
-      trace_format = TraceFormat::Ti;
-
-    trace_active = true;
-    XBT_DEBUG("Tracing is on");
+    paje::dump_comment_file(config::get_value<std::string>(OPT_TRACING_COMMENT_FILE));
+    paje::dump_header(trace_basic, TRACE_display_sizes());
+  } else {
+    trace_format = TraceFormat::Ti;
+    Container::on_creation.connect(on_container_creation_ti);
+    Container::on_destruction.connect(on_container_destruction_ti);
+    StateEvent::on_destruction.connect(on_state_event_destruction);
   }
+
+  trace_active = true;
+  XBT_DEBUG("Tracing is on");
 }
 
 static void on_simulation_end()
@@ -430,8 +414,8 @@ static void on_simulation_end()
     return;
 
   /* dump trace buffer */
-  TRACE_last_timestamp_to_dump = surf_get_clock();
-  TRACE_paje_dump_buffer(true);
+  last_timestamp_to_dump = surf_get_clock();
+  dump_buffer(true);
 
   const Type* root_type = Container::get_root()->type_;
   /* destroy all data structures of tracing (and free) */
@@ -440,7 +424,7 @@ static void on_simulation_end()
 
   /* close the trace files */
   tracing_file.close();
-  XBT_DEBUG("Filename %s is closed", TRACE_get_filename().c_str());
+  XBT_DEBUG("Filename %s is closed", config::get_value<std::string>("tracing/filename").c_str());
 
   /* de-activate trace */
   trace_active = false;
@@ -476,8 +460,9 @@ void init()
                             "(expressed in number of digits after decimal point)",
                             6);
 
-  /* Connect callbacks */
+  /* Connect Engine callbacks */
   s4u::Engine::on_platform_creation.connect(on_simulation_start);
+  s4u::Engine::on_time_advance.connect([](double /*time_delta*/) { dump_buffer(false); });
   s4u::Engine::on_deadlock.connect(on_simulation_end);
   s4u::Engine::on_simulation_end.connect(on_simulation_end);
 }

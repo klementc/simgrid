@@ -87,7 +87,6 @@ Existing Configuration Items
 - **contexts/factory:** :ref:`cfg=contexts/factory`
 - **contexts/guard-size:** :ref:`cfg=contexts/guard-size`
 - **contexts/nthreads:** :ref:`cfg=contexts/nthreads`
-- **contexts/parallel-threshold:** :ref:`cfg=contexts/parallel-threshold`
 - **contexts/stack-size:** :ref:`cfg=contexts/stack-size`
 - **contexts/synchro:** :ref:`cfg=contexts/synchro`
 
@@ -414,7 +413,7 @@ Simulating Asynchronous Send
 
 (this configuration item is experimental and may change or disappear)
 
-It is possible to specify that messages below a certain size will be
+It is possible to specify that messages below a certain size (in bytes) will be
 sent as soon as the call to MPI_Send is issued, without waiting for
 the correspondant receive. This threshold can be configured through
 the ``smpi/async-small-thresh`` item. The default value is 0. This
@@ -516,10 +515,10 @@ In SMPI, this depends on the message size, that is compared against two threshol
 - if (:ref:`smpi/send-is-detached-thresh <cfg=smpi/send-is-detached-thresh>` < size) then
   MPI_Send returns only when the message has actually been sent over the network. This is known as the rendez-vous mode.
 
-The ``smpi/buffering`` option gives an easier interface to choose between these semantics. It can take two values:
+The ``smpi/buffering`` (only valid with MC) option gives an easier interface to choose between these semantics. It can take two values:
 
-- **zero:** means that buffering should be disabled. Blocking communications are actually blocking.
-- **infty:** means that buffering should be made infinite. Blocking communications are non-blocking.
+- **zero:** means that buffering should be disabled. All communications are actually blocking.
+- **infty:** means that buffering should be made infinite. All communications are non-blocking.
 
 .. _cfg=model-check/property:
 
@@ -832,7 +831,6 @@ on other parts of the memory if their size is too small for the
 application.
 
 .. _cfg=contexts/nthreads:
-.. _cfg=contexts/parallel-threshold:
 .. _cfg=contexts/synchro:
 
 Running User Code in Parallel
@@ -849,17 +847,6 @@ launched, each of them handling the same number of user contexts at each
 run. To activate this, set the ``contexts/nthreads`` item to the amount
 of cores that you have in your computer (or lower than 1 to have the
 amount of cores auto-detected).
-
-Even if you asked several worker threads using the previous option,
-you can request to start the parallel execution (and pay the
-associated synchronization costs) only if the potential parallelism is
-large enough. For that, set the ``contexts/parallel-threshold``
-item to the minimal amount of user contexts needed to start the
-parallel execution. In any given simulation round, if that amount is
-not reached, the contexts will be run sequentially directly by the
-main thread (thus saving the synchronization costs). Note that this
-option is mainly useful when the grain of the user code is very fine,
-because our synchronization is now very efficient.
 
 When parallel execution is activated, you can choose the
 synchronization schema used with the ``contexts/synchro`` item,
@@ -1065,7 +1052,7 @@ The possible throughput of network links is often dependent on the
 message sizes, as protocols may adapt to different message sizes. With
 this option, a series of message sizes and factors are given, helping
 the simulation to be more realistic. For instance, the current default
-value means that messages with size 65472 and more will get a total of
+value means that messages with size 65472 bytes and more will get a total of
 MAX_BANDWIDTH*0.940694, messages of size 15424 to 65471 will get
 MAX_BANDWIDTH*0.697866, and so on (where MAX_BANDWIDTH denotes the
 bandwidth of the link).
@@ -1304,7 +1291,7 @@ values, for example ``1:3:2;10:5:1``.  The sections are divided by ";"
 so this example contains two sections.  Furthermore, each section
 consists of three values.
 
-1. The first value denotes the minimum size for this section to take effect;
+1. The first value denotes the minimum size in bytes for this section to take effect;
    read it as "if message size is greater than this value (and other section has a larger
    first value that is also smaller than the message size), use this".
    In the first section above, this value is "1".

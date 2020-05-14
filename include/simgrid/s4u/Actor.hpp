@@ -50,7 +50,7 @@ class XBT_PUBLIC Actor : public xbt::Extendable<Actor> {
   kernel::actor::ActorImpl* const pimpl_;
 #endif
 
-  explicit Actor(smx_actor_t pimpl) : pimpl_(pimpl) {}
+  explicit Actor(kernel::actor::ActorImpl* pimpl) : pimpl_(pimpl) {}
 
 public:
 #ifndef DOXYGEN
@@ -367,7 +367,7 @@ XBT_PUBLIC void exit();
  * blocking functions forbidden in this setting, but also modifications to the global state.
  *
  * The parameter of on_exit's callbacks denotes whether or not the actor's execution failed.
- * It will be set to true if the actor was killed or failed because of an exception,
+ * It will be set to true if the actor was killed or failed because of an exception or if the simulation deadlocked,
  * while it will remain to false if the actor terminated gracefully.
  */
 

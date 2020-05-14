@@ -567,7 +567,6 @@ set(TRACING_SRC
   src/instr/instr_paje_trace.cpp
   src/instr/instr_paje_types.cpp
   src/instr/instr_paje_types.hpp
-  src/instr/instr_paje_values.cpp
   src/instr/instr_paje_values.hpp
   src/instr/instr_platform.cpp
   src/instr/instr_private.hpp
@@ -627,12 +626,14 @@ set(MC_SRC
   src/mc/inspect/mc_unw.cpp
   src/mc/inspect/mc_unw_vmread.cpp
 
+  src/mc/remote/AppSide.cpp
+  src/mc/remote/AppSide.hpp
   src/mc/remote/Channel.cpp
   src/mc/remote/Channel.hpp
-  src/mc/remote/Client.cpp
-  src/mc/remote/Client.hpp
-  src/mc/remote/RemoteClient.hpp
-  src/mc/remote/RemoteClient.cpp
+  src/mc/remote/CheckerSide.cpp
+  src/mc/remote/CheckerSide.hpp
+  src/mc/remote/RemoteSimulation.hpp
+  src/mc/remote/RemoteSimulation.cpp
   src/mc/remote/RemotePtr.hpp
   src/mc/remote/mc_protocol.h
   src/mc/remote/mc_protocol.cpp
@@ -659,7 +660,6 @@ set(MC_SRC
   src/mc/mc_hash.cpp
   src/mc/mc_ignore.hpp
   src/mc/mc_record.cpp
-  src/mc/mc_memory.cpp
   src/mc/mc_private.hpp
   src/mc/mc_request.hpp
   src/mc/mc_request.cpp
@@ -1194,6 +1194,7 @@ set(PLATFORMS_EXAMPLES
   examples/platforms/two_hosts_platform_with_availability_included.xml
   examples/platforms/two_peers.xml
   examples/platforms/vivaldi.xml
+  examples/platforms/wifi_decay_2STA.xml
   examples/platforms/wifi.xml
   )
 

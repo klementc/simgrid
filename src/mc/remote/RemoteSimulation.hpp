@@ -1,3 +1,5 @@
+/* mc::RemoteClient: representative of the Client memory on the MC side */
+
 /* Copyright (c) 2008-2020. The SimGrid Team. All rights reserved.          */
 
 /* This program is free software; you can redistribute it and/or modify it
@@ -6,9 +8,9 @@
 #ifndef SIMGRID_MC_PROCESS_H
 #define SIMGRID_MC_PROCESS_H
 
+#include "mc/datatypes.h"
 #include "src/mc/AddressSpace.hpp"
 #include "src/mc/inspect/ObjectInformation.hpp"
-#include "src/mc/remote/Channel.hpp"
 #include "src/mc/remote/RemotePtr.hpp"
 #include "src/xbt/mmalloc/mmprivate.h"
 
@@ -20,8 +22,8 @@ namespace mc {
 class ActorInformation {
 public:
   /** MCed address of the process */
-  RemotePtr<simgrid::kernel::actor::ActorImpl> address{nullptr};
-  Remote<simgrid::kernel::actor::ActorImpl> copy;
+  RemotePtr<kernel::actor::ActorImpl> address{nullptr};
+  Remote<kernel::actor::ActorImpl> copy;
 
   /** Hostname (owned by `mc_modelchecker->hostnames`) */
   const char* hostname = nullptr;
@@ -47,7 +49,7 @@ struct IgnoredHeapRegion {
   std::size_t size;
 };
 
-/** The Model-Checked process, seen from the MCer perspective
+/** The Application's process memory, seen from the MCer perspective
  *
  *  This class is mixing a lot of different responsibilities and is tied
  *  to SIMIX. It should probably be split into different classes.
@@ -58,11 +60,10 @@ struct IgnoredHeapRegion {
  *  - accessing the system state of the process (heap, …);
  *  - storing the SIMIX state of the process;
  *  - privatization;
- *  - communication with the model-checked process;
  *  - stack unwinding;
  *  - etc.
  */
-class RemoteClient final : public AddressSpace {
+class RemoteSimulation final : public AddressSpace {
 private:
   // Those flags are used to track down which cached information
   // is still up to date and which information needs to be updated.
@@ -72,14 +73,14 @@ private:
   static constexpr int cache_simix_processes = 4;
 
 public:
-  RemoteClient(pid_t pid, int sockfd);
-  ~RemoteClient();
+  explicit RemoteSimulation(pid_t pid);
+  ~RemoteSimulation();
   void init();
 
-  RemoteClient(RemoteClient const&) = delete;
-  RemoteClient(RemoteClient&&)      = delete;
-  RemoteClient& operator=(RemoteClient const&) = delete;
-  RemoteClient& operator=(RemoteClient&&) = delete;
+  RemoteSimulation(RemoteSimulation const&) = delete;
+  RemoteSimulation(RemoteSimulation&&)      = delete;
+  RemoteSimulation& operator=(RemoteSimulation const&) = delete;
+  RemoteSimulation& operator=(RemoteSimulation&&) = delete;
 
   // Read memory:
   void* read_bytes(void* buffer, std::size_t size, RemotePtr<void> address,
@@ -105,30 +106,27 @@ public:
   void clear_bytes(RemotePtr<void> address, size_t len);
 
   // Debug information:
-  std::shared_ptr<simgrid::mc::ObjectInformation> find_object_info(RemotePtr<void> addr) const;
-  std::shared_ptr<simgrid::mc::ObjectInformation> find_object_info_exec(RemotePtr<void> addr) const;
-  std::shared_ptr<simgrid::mc::ObjectInformation> find_object_info_rw(RemotePtr<void> addr) const;
-  simgrid::mc::Frame* find_function(RemotePtr<void> ip) const;
-  const simgrid::mc::Variable* find_variable(const char* name) const;
+  std::shared_ptr<ObjectInformation> find_object_info(RemotePtr<void> addr) const;
+  std::shared_ptr<ObjectInformation> find_object_info_exec(RemotePtr<void> addr) const;
+  std::shared_ptr<ObjectInformation> find_object_info_rw(RemotePtr<void> addr) const;
+  Frame* find_function(RemotePtr<void> ip) const;
+  const Variable* find_variable(const char* name) const;
 
   // Heap access:
   xbt_mheap_t get_heap()
   {
-    if (not(this->cache_flags_ & RemoteClient::cache_heap))
+    if (not(this->cache_flags_ & RemoteSimulation::cache_heap))
       this->refresh_heap();
     return this->heap.get();
   }
   const malloc_info* get_malloc_info()
   {
-    if (not(this->cache_flags_ & RemoteClient::cache_malloc))
+    if (not(this->cache_flags_ & RemoteSimulation::cache_malloc))
       this->refresh_malloc_info();
     return this->heap_info.data();
   }
 
-  void clear_cache() { this->cache_flags_ = RemoteClient::cache_none; }
-
-  Channel const& get_channel() const { return channel_; }
-  Channel& get_channel() { return channel_; }
+  void clear_cache() { this->cache_flags_ = RemoteSimulation::cache_none; }
 
   std::vector<IgnoredRegion> const& ignored_regions() const { return ignored_regions_; }
   void ignore_region(std::uint64_t address, std::size_t size);
@@ -146,7 +144,7 @@ public:
 
   void ignore_global_variable(const char* name)
   {
-    for (std::shared_ptr<simgrid::mc::ObjectInformation> const& info : this->object_infos)
+    for (std::shared_ptr<ObjectInformation> const& info : this->object_infos)
       info->remove_global_variable(name);
   }
 
@@ -158,11 +156,11 @@ public:
   void unignore_heap(void* address, size_t size);
 
   void ignore_local_variable(const char* var_name, const char* frame_name);
-  std::vector<simgrid::mc::ActorInformation>& actors();
-  std::vector<simgrid::mc::ActorInformation>& dead_actors();
+  std::vector<ActorInformation>& actors();
+  std::vector<ActorInformation>& dead_actors();
 
   /** Get a local description of a remote SIMIX actor */
-  simgrid::mc::ActorInformation* resolve_actor_info(simgrid::mc::RemotePtr<simgrid::kernel::actor::ActorImpl> actor)
+  ActorInformation* resolve_actor_info(RemotePtr<kernel::actor::ActorImpl> actor)
   {
     xbt_assert(mc_model_checker != nullptr);
     if (not actor)
@@ -178,9 +176,9 @@ public:
   }
 
   /** Get a local copy of the SIMIX actor structure */
-  simgrid::kernel::actor::ActorImpl* resolve_actor(simgrid::mc::RemotePtr<simgrid::kernel::actor::ActorImpl> process)
+  kernel::actor::ActorImpl* resolve_actor(RemotePtr<kernel::actor::ActorImpl> process)
   {
-    simgrid::mc::ActorInformation* actor_info = this->resolve_actor_info(process);
+    ActorInformation* actor_info = this->resolve_actor_info(process);
     if (actor_info)
       return actor_info->copy.get_buffer();
     else
@@ -195,10 +193,9 @@ private:
   void refresh_malloc_info();
   void refresh_simix();
 
-  pid_t pid_ = -1;
-  Channel channel_;
+  pid_t pid_    = -1;
   bool running_ = false;
-  std::vector<simgrid::xbt::VmMap> memory_map_;
+  std::vector<xbt::VmMap> memory_map_;
   RemotePtr<void> maestro_stack_start_;
   RemotePtr<void> maestro_stack_end_;
   int memory_file = -1;
@@ -209,9 +206,9 @@ private:
 public:
   // object info
   // TODO, make private (first, objectify simgrid::mc::ObjectInformation*)
-  std::vector<std::shared_ptr<simgrid::mc::ObjectInformation>> object_infos;
-  std::shared_ptr<simgrid::mc::ObjectInformation> libsimgrid_info;
-  std::shared_ptr<simgrid::mc::ObjectInformation> binary_info;
+  std::vector<std::shared_ptr<ObjectInformation>> object_infos;
+  std::shared_ptr<ObjectInformation> libsimgrid_info;
+  std::shared_ptr<ObjectInformation> binary_info;
 
   // Copies of MCed SMX data structures
   /** Copy of `simix_global->process_list`
@@ -228,7 +225,7 @@ public:
 
 private:
   /** State of the cache (which variables are up to date) */
-  int cache_flags_ = RemoteClient::cache_none;
+  int cache_flags_ = RemoteSimulation::cache_none;
 
 public:
   /** Address of the heap structure in the MCed process. */
@@ -270,15 +267,11 @@ public:
   /** The corresponding context
    */
   void* unw_underlying_context;
-
-  /* Check whether the given actor is enabled */
-  bool actor_is_enabled(aid_t pid);
 };
 
-/** Open a FD to a remote process memory (`/dev/$pid/mem`)
- */
+/** Open a FD to a remote process memory (`/dev/$pid/mem`) */
 XBT_PRIVATE int open_vm(pid_t pid, int flags);
-}
-}
+} // namespace mc
+} // namespace simgrid
 
 #endif

@@ -3,14 +3,41 @@
 /* This program is free software; you can redistribute it and/or modify it
  * under the terms of the license (GNU LGPL) which comes with this package. */
 
-#include "xbt/random.hpp"
 #include "xbt/asserts.h"
+#include <fstream>
+#include <iostream>
 #include <limits>
 #include <memory>
+#include <string>
+#include <xbt/log.hpp>
+#include <xbt/random.hpp>
+
+XBT_LOG_EXTERNAL_CATEGORY(xbt);
+XBT_LOG_NEW_DEFAULT_SUBCATEGORY(xbt_random, xbt, "Random");
 
 namespace simgrid {
 namespace xbt {
 namespace random {
+
+bool Random::read_state(const std::string& filename)
+{
+  std::ifstream file(filename);
+  file >> mt19937_gen;
+  file.close();
+  if (file.fail())
+    XBT_WARN("Could not save the RNG state to file %s.", filename.c_str());
+  return not file.fail();
+}
+
+bool Random::write_state(const std::string& filename)
+{
+  std::ofstream file(filename);
+  file << mt19937_gen;
+  file.close();
+  if (file.fail())
+    XBT_WARN("Could not read the RNG state from file %s.", filename.c_str());
+  return not file.fail();
+}
 
 int StdRandom::uniform_int(int min, int max)
 {
@@ -90,6 +117,16 @@ void set_implem_std()
 void set_mersenne_seed(int seed)
 {
   default_random->set_seed(seed);
+}
+
+bool read_mersenne_state(const std::string& filename)
+{
+  return default_random->read_state(filename);
+}
+
+bool write_mersenne_state(const std::string& filename)
+{
+  return default_random->write_state(filename);
 }
 
 int uniform_int(int min, int max)

@@ -18,7 +18,7 @@ class PageStore;
 class ChunkedData;
 class ModelChecker;
 class AddressSpace;
-class RemoteClient;
+class RemoteSimulation;
 class Snapshot;
 class ObjectInformation;
 class Member;

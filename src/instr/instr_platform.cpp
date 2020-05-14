@@ -161,7 +161,7 @@ static void recursiveNewVariableType(const std::string& new_typename, const std:
   if (root->get_name() == "LINK")
     root->by_name_or_create(std::string("b") + new_typename, color);
 
-  for (auto const& elm : root->children_) {
+  for (auto const& elm : root->get_children()) {
     recursiveNewVariableType(new_typename, color, elm.second.get());
   }
 }
@@ -177,7 +177,7 @@ static void recursiveNewUserVariableType(const std::string& father_type, const s
   if (root->get_name() == father_type) {
     root->by_name_or_create(new_typename, color);
   }
-  for (auto const& elm : root->children_)
+  for (auto const& elm : root->get_children())
     recursiveNewUserVariableType(father_type, new_typename, color, elm.second.get());
 }
 
@@ -193,7 +193,7 @@ static void recursiveNewUserStateType(const std::string& father_type, const std:
   if (root->get_name() == father_type)
     root->by_name_or_create<simgrid::instr::StateType>(new_typename);
 
-  for (auto const& elm : root->children_)
+  for (auto const& elm : root->get_children())
     recursiveNewUserStateType(father_type, new_typename, elm.second.get());
 }
 
@@ -208,7 +208,7 @@ static void recursiveNewValueForUserStateType(const std::string& type_name, cons
   if (root->get_name() == type_name)
     static_cast<simgrid::instr::StateType*>(root)->add_entity_value(val, color);
 
-  for (auto const& elm : root->children_)
+  for (auto const& elm : root->get_children())
     recursiveNewValueForUserStateType(type_name, val, color, elm.second.get());
 }
 
@@ -306,6 +306,7 @@ static void on_link_creation(s4u::Link const& link)
     latency->set_calling_container(container);
     latency->set_event(0, link.get_latency());
   }
+
   if (TRACE_uncategorized()) {
     container->type_->by_name_or_create("bandwidth_used", "0.5 0.5 0.5");
   }
@@ -338,13 +339,6 @@ static void on_host_creation(s4u::Host const& host)
   }
 }
 
-static void on_host_speed_change(s4u::Host const& host)
-{
-  Container::by_name(host.get_name())
-      ->get_variable("speed")
-      ->set_event(surf_get_clock(), host.get_core_count() * host.get_available_speed());
-}
-
 static void on_action_state_change(kernel::resource::Action const& action,
                                    kernel::resource::Action::State /* previous */)
 {
@@ -368,19 +362,6 @@ static void on_action_state_change(kernel::resource::Action const& action,
   }
 }
 
-static void on_link_bandwidth_change(s4u::Link const& link)
-{
-  Container::by_name(link.get_name())
-      ->get_variable("bandwidth")
-      ->set_event(surf_get_clock(), sg_bandwidth_factor * link.get_bandwidth());
-}
-
-static void on_netpoint_creation(kernel::routing::NetPoint const& netpoint)
-{
-  if (netpoint.is_router())
-    new RouterContainer(netpoint.get_name(), currentContainer.back());
-}
-
 static void on_platform_created()
 {
   currentContainer.clear();
@@ -389,15 +370,16 @@ static void on_platform_created()
   recursiveGraphExtraction(s4u::Engine::get_instance()->get_netzone_root(), Container::get_root(), filter);
   XBT_DEBUG("Graph extraction finished.");
   delete filter;
-  TRACE_paje_dump_buffer(true);
+  dump_buffer(true);
 }
 
 static void on_actor_creation(s4u::Actor const& actor)
 {
-  const Container* root = Container::get_root();
-  Container* container  = Container::by_name(actor.get_host()->get_name());
+  const Container* root      = Container::get_root();
+  Container* container       = Container::by_name(actor.get_host()->get_name());
+  std::string container_name = instr_pid(actor);
 
-  container->create_child(instr_pid(actor), "ACTOR");
+  container->create_child(container_name, "ACTOR");
   ContainerType* actor_type = container->type_->by_name_or_create<ContainerType>("ACTOR");
   StateType* state          = actor_type->by_name_or_create<StateType>("ACTOR_STATE");
   state->add_entity_value("suspend", "1 0 1");
@@ -406,9 +388,7 @@ static void on_actor_creation(s4u::Actor const& actor)
   state->add_entity_value("send", "0 0 1");
   state->add_entity_value("execute", "0 1 1");
   root->type_->by_name_or_create("ACTOR_LINK", actor_type, actor_type);
-  root->type_->by_name_or_create("ACTOR_TASK_LINK", actor_type, actor_type);
 
-  std::string container_name = instr_pid(actor);
   actor.on_exit([container_name](bool failed) {
     if (failed)
       // kill means that this actor no longer exists, let's destroy it
@@ -455,14 +435,25 @@ void define_callbacks()
   if (TRACE_needs_platform()) {
     s4u::Engine::on_platform_created.connect(on_platform_created);
     s4u::Host::on_creation.connect(on_host_creation);
-    s4u::Host::on_speed_change.connect(on_host_speed_change);
+    s4u::Host::on_speed_change.connect([](s4u::Host const& host) {
+      Container::by_name(host.get_name())
+          ->get_variable("speed")
+          ->set_event(surf_get_clock(), host.get_core_count() * host.get_available_speed());
+    });
     s4u::Link::on_creation.connect(on_link_creation);
-    s4u::Link::on_bandwidth_change.connect(on_link_bandwidth_change);
+    s4u::Link::on_bandwidth_change.connect([](s4u::Link const& link) {
+      Container::by_name(link.get_name())
+          ->get_variable("bandwidth")
+          ->set_event(surf_get_clock(), sg_bandwidth_factor * link.get_bandwidth());
+    });
     s4u::NetZone::on_seal.connect([](s4u::NetZone const& /*netzone*/) { currentContainer.pop_back(); });
-    kernel::routing::NetPoint::on_creation.connect(on_netpoint_creation);
+    kernel::routing::NetPoint::on_creation.connect([](kernel::routing::NetPoint const& netpoint) {
+      if (netpoint.is_router())
+        new RouterContainer(netpoint.get_name(), currentContainer.back());
+    });
   }
+
   s4u::NetZone::on_creation.connect(on_netzone_creation);
-  s4u::Engine::on_time_advance.connect([](double /*time_delta*/) { TRACE_paje_dump_buffer(false); });
 
   kernel::resource::CpuAction::on_state_change.connect(on_action_state_change);
   s4u::Link::on_communication_state_change.connect(on_action_state_change);
@@ -499,6 +490,17 @@ void define_callbacks()
     s4u::Comm::on_completion.connect(
         [](s4u::Actor const& actor) { Container::by_name(instr_pid(actor))->get_state("ACTOR_STATE")->pop_event(); });
     s4u::Actor::on_host_change.connect(on_actor_host_change);
+  }
+
+  if (TRACE_smpi_is_enabled() && TRACE_smpi_is_computing()) {
+    s4u::Exec::on_start.connect([](simgrid::s4u::Actor const& actor, s4u::Exec const& exec) {
+      Container::by_name(std::string("rank-") + std::to_string(actor.get_pid()))
+          ->get_state("MPI_STATE")
+          ->push_event("computing", new CpuTIData("compute", exec.get_cost()));
+    });
+    s4u::Exec::on_completion.connect([](s4u::Actor const& actor, s4u::Exec const&) {
+      Container::by_name(std::string("rank-") + std::to_string(actor.get_pid()))->get_state("MPI_STATE")->pop_event();
+    });
   }
 
   if (TRACE_vm_is_enabled()) {

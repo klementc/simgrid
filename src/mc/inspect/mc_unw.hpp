@@ -44,11 +44,11 @@ namespace mc {
 
 class UnwindContext {
   simgrid::mc::AddressSpace* address_space_ = nullptr;
-  simgrid::mc::RemoteClient* process_      = nullptr;
+  simgrid::mc::RemoteSimulation* process_   = nullptr;
   unw_context_t unwind_context_;
 
 public:
-  void initialize(simgrid::mc::RemoteClient* process, unw_context_t* c);
+  void initialize(simgrid::mc::RemoteSimulation* process, unw_context_t* c);
   unw_cursor_t cursor();
 
 private: // Methods and virtual table for libunwind

@@ -21,7 +21,7 @@
 #include "src/surf/xml/platf.hpp"
 
 #if SIMGRID_HAVE_MC
-#include "src/mc/remote/Client.hpp"
+#include "src/mc/remote/AppSide.hpp"
 #endif
 
 
@@ -228,31 +228,28 @@ void Global::display_all_actor_status()
   for (auto const& kv : process_list) {
     kernel::actor::ActorImpl* actor = kv.second;
 
-    if (actor->waiting_synchro) {
+    if (actor->waiting_synchro_) {
       const char* synchro_description = "unknown";
-      // we don't care about the Activity type to get its name, use RawImpl
-      const char* name = boost::static_pointer_cast<kernel::activity::ActivityImpl_T<kernel::activity::RawImpl>>(
-                             actor->waiting_synchro)
-                             ->get_cname();
 
-      if (boost::dynamic_pointer_cast<kernel::activity::ExecImpl>(actor->waiting_synchro) != nullptr)
+      if (boost::dynamic_pointer_cast<kernel::activity::ExecImpl>(actor->waiting_synchro_) != nullptr)
         synchro_description = "execution";
 
-      if (boost::dynamic_pointer_cast<kernel::activity::CommImpl>(actor->waiting_synchro) != nullptr)
+      if (boost::dynamic_pointer_cast<kernel::activity::CommImpl>(actor->waiting_synchro_) != nullptr)
         synchro_description = "communication";
 
-      if (boost::dynamic_pointer_cast<kernel::activity::SleepImpl>(actor->waiting_synchro) != nullptr)
+      if (boost::dynamic_pointer_cast<kernel::activity::SleepImpl>(actor->waiting_synchro_) != nullptr)
         synchro_description = "sleeping";
 
-      if (boost::dynamic_pointer_cast<kernel::activity::RawImpl>(actor->waiting_synchro) != nullptr)
+      if (boost::dynamic_pointer_cast<kernel::activity::RawImpl>(actor->waiting_synchro_) != nullptr)
         synchro_description = "synchronization";
 
-      if (boost::dynamic_pointer_cast<kernel::activity::IoImpl>(actor->waiting_synchro) != nullptr)
+      if (boost::dynamic_pointer_cast<kernel::activity::IoImpl>(actor->waiting_synchro_) != nullptr)
         synchro_description = "I/O";
 
-      XBT_INFO("Actor %ld (%s@%s): waiting for %s activity %p (%s) in state %d to finish", actor->get_pid(),
-               actor->get_cname(), actor->get_host()->get_cname(), synchro_description, actor->waiting_synchro.get(),
-               name, (int)actor->waiting_synchro->state_);
+      XBT_INFO("Actor %ld (%s@%s): waiting for %s activity %#zx (%s) in state %d to finish", actor->get_pid(),
+               actor->get_cname(), actor->get_host()->get_cname(), synchro_description,
+               (xbt_log_no_loc ? (size_t)0xDEADBEEF : (size_t)actor->waiting_synchro_.get()),
+               actor->waiting_synchro_->get_cname(), (int)actor->waiting_synchro_->state_);
     } else {
       XBT_INFO("Actor %ld (%s@%s)", actor->get_pid(), actor->get_cname(), actor->get_host()->get_cname());
     }
@@ -282,7 +279,7 @@ void SIMIX_global_init(int *argc, char **argv)
 #if SIMGRID_HAVE_MC
   // The communication initialization is done ASAP.
   // We need to communicate  initialization of the different layers to the model-checker.
-  simgrid::mc::Client::initialize();
+  simgrid::mc::AppSide::initialize();
 #endif
 
   if (simix_global == nullptr) {
@@ -505,7 +502,7 @@ void SIMIX_run()
        */
 
       for (auto const& actor : simix_global->actors_that_ran) {
-        if (actor->simcall.call_ != SIMCALL_NONE) {
+        if (actor->simcall_.call_ != SIMCALL_NONE) {
           actor->simcall_handle(0);
         }
       }
@@ -548,19 +545,26 @@ void SIMIX_run()
 
     XBT_DEBUG("### time %f, #processes %zu, #to_run %zu", time, simix_global->process_list.size(),
               simix_global->actors_to_run.size());
+
+    if (time < 0. && simix_global->actors_to_run.empty() && not simix_global->process_list.empty()) {
+      if (simix_global->process_list.size() <= simix_global->daemons.size()) {
+        XBT_CRITICAL("Oops! Daemon actors cannot do any blocking activity (communications, synchronization, etc) "
+                     "once the simulation is over. Please fix your on_exit() functions.");
+      } else {
+        XBT_CRITICAL("Oops! Deadlock or code not perfectly clean.");
+      }
+      simix_global->display_all_actor_status();
+      simgrid::s4u::Engine::on_deadlock();
+      for (auto const& kv : simix_global->process_list) {
+        XBT_DEBUG("Kill %s", kv.second->get_cname());
+        simix_global->maestro_->kill(kv.second);
+      }
+    }
   } while (time > -1.0 || not simix_global->actors_to_run.empty());
 
-  if (not simix_global->process_list.empty()) {
-    if (simix_global->process_list.size() <= simix_global->daemons.size()) {
-      XBT_CRITICAL("Oops! Daemon actors cannot do any blocking activity (communications, synchronization, etc) "
-                   "once the simulation is over. Please fix your on_exit() functions.");
-    } else {
-      XBT_CRITICAL("Oops! Deadlock or code not perfectly clean.");
-    }
-    simix_global->display_all_actor_status();
-    simgrid::s4u::Engine::on_deadlock();
-    xbt_abort();
-  }
+  if (not simix_global->process_list.empty())
+    THROW_IMPOSSIBLE;
+
   simgrid::s4u::Engine::on_simulation_end();
 }
 

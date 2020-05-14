@@ -255,6 +255,7 @@ include examples/deprecated/java/trace/pingpong/Receiver.java
 include examples/deprecated/java/trace/pingpong/Sender.java
 include examples/deprecated/java/trace/pingpong/trace-pingpong.tesh
 include examples/deprecated/msg/README.doc
+include examples/deprecated/msg/mc/bugged2-liveness.tesh
 include examples/deprecated/msg/mc/bugged2_liveness.c
 include examples/deprecated/msg/mc/centralized_mutex.c
 include examples/deprecated/msg/mc/centralized_mutex.tesh
@@ -676,6 +677,8 @@ include teshsuite/s4u/activity-lifecycle/testing_sleep.cpp
 include teshsuite/s4u/activity-lifecycle/testing_test-wait.cpp
 include teshsuite/s4u/actor-autorestart/actor-autorestart.cpp
 include teshsuite/s4u/actor-autorestart/actor-autorestart.tesh
+include teshsuite/s4u/actor-suspend/actor-suspend.cpp
+include teshsuite/s4u/actor-suspend/actor-suspend.tesh
 include teshsuite/s4u/actor/actor.cpp
 include teshsuite/s4u/actor/actor.tesh
 include teshsuite/s4u/basic-link-test/basic-link-test.cpp
@@ -1937,6 +1940,7 @@ include examples/platforms/two_hosts_profiles.xml
 include examples/platforms/two_peers.xml
 include examples/platforms/vivaldi.xml
 include examples/platforms/wifi.xml
+include examples/platforms/wifi_decay_2STA.xml
 include examples/python/CMakeLists.txt
 include examples/python/actor-create/actor-create_d.xml
 include examples/python/actor-lifetime/actor-lifetime_d.xml
@@ -2147,7 +2151,6 @@ include src/instr/instr_paje_header.cpp
 include src/instr/instr_paje_trace.cpp
 include src/instr/instr_paje_types.cpp
 include src/instr/instr_paje_types.hpp
-include src/instr/instr_paje_values.cpp
 include src/instr/instr_paje_values.hpp
 include src/instr/instr_platform.cpp
 include src/instr/instr_private.hpp
@@ -2274,7 +2277,6 @@ include src/mc/mc_global.cpp
 include src/mc/mc_hash.cpp
 include src/mc/mc_hash.hpp
 include src/mc/mc_ignore.hpp
-include src/mc/mc_memory.cpp
 include src/mc/mc_mmu.hpp
 include src/mc/mc_private.hpp
 include src/mc/mc_record.cpp
@@ -2287,13 +2289,15 @@ include src/mc/mc_smx.cpp
 include src/mc/mc_smx.hpp
 include src/mc/mc_state.cpp
 include src/mc/mc_state.hpp
+include src/mc/remote/AppSide.cpp
+include src/mc/remote/AppSide.hpp
 include src/mc/remote/Channel.cpp
 include src/mc/remote/Channel.hpp
-include src/mc/remote/Client.cpp
-include src/mc/remote/Client.hpp
-include src/mc/remote/RemoteClient.cpp
-include src/mc/remote/RemoteClient.hpp
+include src/mc/remote/CheckerSide.cpp
+include src/mc/remote/CheckerSide.hpp
 include src/mc/remote/RemotePtr.hpp
+include src/mc/remote/RemoteSimulation.cpp
+include src/mc/remote/RemoteSimulation.hpp
 include src/mc/remote/mc_protocol.cpp
 include src/mc/remote/mc_protocol.h
 include src/mc/sosp/ChunkedData.cpp

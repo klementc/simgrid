@@ -6,6 +6,7 @@
 #ifndef SIMGRID_MC_MODEL_CHECKER_HPP
 #define SIMGRID_MC_MODEL_CHECKER_HPP
 
+#include "src/mc/remote/CheckerSide.hpp"
 #include "src/mc/sosp/PageStore.hpp"
 #include "xbt/base.h"
 
@@ -13,31 +14,27 @@
 #include <set>
 #include <string>
 
-#include <event2/event.h>
-
 namespace simgrid {
 namespace mc {
 
 /** State of the model-checker (global variables for the model checker)
  */
 class ModelChecker {
-  struct event_base* base_    = nullptr;
-  struct event* socket_event_ = nullptr;
-  struct event* signal_event_ = nullptr;
+  CheckerSide checker_side_;
   /** String pool for host names */
   std::set<std::string> hostnames_;
   // This is the parent snapshot of the current state:
   PageStore page_store_{500};
-  std::unique_ptr<RemoteClient> process_;
+  std::unique_ptr<RemoteSimulation> remote_simulation_;
   Checker* checker_ = nullptr;
 
 public:
   ModelChecker(ModelChecker const&) = delete;
   ModelChecker& operator=(ModelChecker const&) = delete;
-  explicit ModelChecker(std::unique_ptr<RemoteClient> process);
-  ~ModelChecker();
+  explicit ModelChecker(std::unique_ptr<RemoteSimulation> remote_simulation, int sockfd);
 
-  RemoteClient& process() { return *process_; }
+  RemoteSimulation& get_remote_simulation() { return *remote_simulation_; }
+  Channel& channel() { return checker_side_.get_channel(); }
   PageStore& page_store()
   {
     return page_store_;
@@ -50,11 +47,11 @@ public:
 
   void start();
   void shutdown();
-  void resume(simgrid::mc::RemoteClient& process);
-  void loop();
+  void resume(simgrid::mc::RemoteSimulation& get_remote_simulation);
   void handle_events(int fd, short events);
   void wait_for_requests();
   void handle_simcall(Transition const& transition);
+
   XBT_ATTRIB_NORETURN void exit(int status);
 
   bool checkDeadlock();
@@ -66,7 +63,6 @@ private:
   void setup_ignore();
   bool handle_message(const char* buffer, ssize_t size);
   void handle_waitpid();
-  void on_signal(int signo);
 
 public:
   unsigned long visited_states = 0;

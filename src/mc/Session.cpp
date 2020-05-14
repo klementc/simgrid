@@ -25,7 +25,7 @@ XBT_LOG_NEW_DEFAULT_SUBCATEGORY(mc_Session, mc, "Model-checker session");
 namespace simgrid {
 namespace mc {
 
-static void setup_child_environment(int socket)
+static void run_child_process(int socket, const std::function<void()>& code)
 {
   /* On startup, simix_global_init() calls simgrid::mc::Client::initialize(), which checks whether the MC_ENV_SOCKET_FD
    * env variable is set. If so, MC mode is assumed, and the client is setup from its side
@@ -44,9 +44,6 @@ static void setup_child_environment(int socket)
   xbt_assert(fdflags != -1 && fcntl(socket, F_SETFD, fdflags & ~FD_CLOEXEC) != -1,
              "Could not remove CLOEXEC for socket");
 
-  // Set environment so that mmalloc gets used in application
-  setenv(MC_ENV_VARIABLE, "1", 1);
-
   // Disable lazy relocation in the model-checked process to prevent the application from
   // modifying its .got.plt during snapshot.
   setenv("LC_BIND_NOW", "1", 1);
@@ -55,6 +52,8 @@ static void setup_child_environment(int socket)
   int res = std::snprintf(buffer, sizeof(buffer), "%i", socket);
   xbt_assert((size_t)res < sizeof(buffer) && res != -1);
   setenv(MC_ENV_SOCKET_FD, buffer, 1);
+
+  code();
 }
 
 Session::Session(const std::function<void()>& code)
@@ -77,9 +76,8 @@ Session::Session(const std::function<void()>& code)
 
   if (pid == 0) { // Child
     ::close(sockets[1]);
-    setup_child_environment(sockets[0]);
-    code();
-    xbt_die("The model-checked process failed to exec(): %s", strerror(errno));
+    run_child_process(sockets[0], code);
+    DIE_IMPOSSIBLE;
   }
 
   // Parent (model-checker):
@@ -87,11 +85,11 @@ Session::Session(const std::function<void()>& code)
 
   xbt_assert(mc_model_checker == nullptr, "Did you manage to start the MC twice in this process?");
 
-  std::unique_ptr<simgrid::mc::RemoteClient> process(new simgrid::mc::RemoteClient(pid, sockets[1]));
-  model_checker_.reset(new simgrid::mc::ModelChecker(std::move(process)));
+  auto process = std::unique_ptr<simgrid::mc::RemoteSimulation>(new simgrid::mc::RemoteSimulation(pid));
+  model_checker_.reset(new simgrid::mc::ModelChecker(std::move(process), sockets[1]));
 
   mc_model_checker = model_checker_.get();
-  mc_model_checker->start();
+  model_checker_->start();
 }
 
 Session::~Session()
@@ -103,7 +101,7 @@ Session::~Session()
 void Session::initialize()
 {
   xbt_assert(initial_snapshot_ == nullptr);
-  mc_model_checker->wait_for_requests();
+  model_checker_->wait_for_requests();
   initial_snapshot_ = std::make_shared<simgrid::mc::Snapshot>(0);
 }
 
@@ -115,12 +113,12 @@ void Session::execute(Transition const& transition)
 
 void Session::restore_initial_state()
 {
-  this->initial_snapshot_->restore(&mc_model_checker->process());
+  this->initial_snapshot_->restore(&model_checker_->get_remote_simulation());
 }
 
 void Session::log_state()
 {
-  mc_model_checker->getChecker()->log_state();
+  model_checker_->getChecker()->log_state();
 
   if (not _sg_mc_dot_output_file.get().empty()) {
     fprintf(dot_output, "}\n");
@@ -141,6 +139,16 @@ void Session::close()
     model_checker_   = nullptr;
     mc_model_checker = nullptr;
   }
+}
+
+bool Session::actor_is_enabled(aid_t pid)
+{
+  s_mc_message_actor_enabled_t msg{MC_MESSAGE_ACTOR_ENABLED, pid};
+  model_checker_->channel().send(msg);
+  char buff[MC_MESSAGE_LENGTH];
+  ssize_t received = model_checker_->channel().receive(buff, MC_MESSAGE_LENGTH, true);
+  xbt_assert(received == sizeof(s_mc_message_int_t), "Unexpected size in answer to ACTOR_ENABLED");
+  return ((s_mc_message_int_t*)buff)->value;
 }
 
 simgrid::mc::Session* session;

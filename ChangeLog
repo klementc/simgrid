@@ -17,6 +17,13 @@ Important user-visible changes:
    these values if needed. Network and routing models already providing separate
    loopbacks (clusters and such) are not impacted by this change.
 
+S4U:
+ - the on_exit() of each actor is also executed when the simulation deadlocks.
+
+C binding:
+ - The return type of the sg_actor_on_exit() callbacks is now 'void'
+   (int value was previously ignored)
+
 General:
  - LTO is now enabled for Intel/clang compilers.
  - LTO behavior on GCC can be parameterized using LTO_EXTRA_FLAG in cmake.
@@ -27,17 +34,24 @@ C interface:
  - Many MSG tests were converted to the new S4U's interface in C, that
    was extended for that.
 
+Simix:
+ - Remove obsolete option --cfg=contexts/parallel-threshold.
+
 Fixed bugs (FG#.. -> FramaGit bugs; FG!.. -> FG merge requests)
  (FG: issues on Framagit; GF: issues on GForge; GH: issues on GitHub)
  - FG#41: Add sg_actor_create C interface
  - FG#43: xbt::random needs some care
  - FG#48: The Impossible Did Happen (yet again)
+ - FG#50: Suspending an actor executed at the current timestamp fails
  - FG!24: Documentation and fix for xbt/random
+ - FG!35: Add a modeling hint for parallel links in doc
+ - FG!36: [xbt/random] Read/Write the state of the RNG
  - GF#18137: Allow different stack sizes?
  - GH#128: Parallelization of simulation with --cfg=contexts/nthreads
  - GH#139: Allow pthread creation in SMPI
  - GH#336: Packet-level simulation using SMPI?
  - GH!337: Fix link_energy plugin for wifi platforms
+ - GH!339: Add Mailbox set_receiver method to python binding
 
 ----------------------------------------------------------------------------
 
@@ -560,7 +574,7 @@ Plugins:
  - Rename Energy plugin into host_energy
  - Rename Load plugin into host_load
 
-simix:
+Simix:
  - Add parameter --cfg=simix/breakpoint to raise a SIGTRAP at given time.
  - kill simix::onDeadlock() that was somewhat dupplicating s4u::on_deadlock()
  - Improve performance when handling timeouts of simix synchros.

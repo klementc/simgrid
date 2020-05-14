@@ -167,6 +167,9 @@ public:
  * @details A NetworkAction represents a communication between two [hosts](@ref simgrid::surf::HostImpl)
  */
 class NetworkAction : public Action {
+  s4u::Host& src_;
+  s4u::Host& dst_;
+
 public:
   /** @brief Constructor
    *
@@ -174,7 +177,10 @@ public:
    * @param cost The cost of this  NetworkAction in [TODO]
    * @param failed [description]
    */
-  NetworkAction(Model* model, double cost, bool failed) : Action(model, cost, failed) {}
+  NetworkAction(Model* model, s4u::Host& src, s4u::Host& dst, double cost, bool failed)
+      : Action(model, cost, failed), src_(src), dst_(dst)
+  {
+  }
 
   /**
    * @brief NetworkAction constructor
@@ -184,15 +190,18 @@ public:
    * @param failed Actions can be created in a failed state
    * @param var The lmm variable associated to this Action if it is part of a LMM component
    */
-  NetworkAction(Model* model, double cost, bool failed, lmm::Variable* var) : Action(model, cost, failed, var){};
+  NetworkAction(Model* model, s4u::Host& src, s4u::Host& dst, double cost, bool failed, lmm::Variable* var)
+      : Action(model, cost, failed, var), src_(src), dst_(dst){};
 
   void set_state(Action::State state) override;
-  virtual std::list<LinkImpl*> links() const;
+  virtual std::list<LinkImpl*> get_links() const;
 
   double latency_    = {};
   double lat_current_ = {};
   double sharing_penalty_ = {};
   double rate_       = {};
+  s4u::Host& get_src() const { return src_; }
+  s4u::Host& get_dst() const { return dst_; }
 };
 } // namespace resource
 } // namespace kernel
