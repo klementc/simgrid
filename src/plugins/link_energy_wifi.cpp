@@ -7,6 +7,7 @@
 #include "src/surf/network_wifi.hpp"
 #include "src/surf/surf_interface.hpp"
 #include "surf/surf.hpp"
+#include "src/kernel/lmm/maxmin.hpp"
 
 #include <boost/algorithm/string/classification.hpp>
 #include <boost/algorithm/string/split.hpp>
@@ -110,13 +111,45 @@ void LinkEnergyWifi::update(const simgrid::kernel::resource::NetworkAction& acti
   double duration = surf_get_clock() - prev_update_;
   prev_update_    = surf_get_clock();
 
+  // todo epsilon
+  if(duration < 1e-6) {
+    XBT_DEBUG("duration equals to 0, leaving update");
+    return;
+  }
+  //XBT_INFO("duration different than 0, continue update");
+
   simgrid::kernel::resource::NetworkWifiLink* wifi_link =
       static_cast<simgrid::kernel::resource::NetworkWifiLink*>(link_->get_impl());
-  wifi_link->get_nb_hosts_on_link();
-  
   
   //sum_{actions du lien} action->get_variable()/wifi_link->get_host_rate(dst)
+  const kernel::lmm::Variable* var;
+  const kernel::lmm::Element* elem = nullptr;
   double durUsage = 0;
+  
+  while((var = wifi_link->get_constraint()->get_variable(&elem))) {
+    auto* action = static_cast<kernel::resource::NetworkWifiAction*>(var->get_id());
+    //XBT_DEBUG("action value: %f", action->get_last_value());
+    action->get_variable();
+
+    if (actionWifi.get_src_link() == link_->get_impl())
+      durUsage += action->get_variable()->get_value()/wifi_link->get_host_rate(&action->get_src());
+    else if (actionWifi.get_dst_link() == link_->get_impl())
+      durUsage += action->get_variable()->get_value()/wifi_link->get_host_rate(&action->get_dst());
+    else{
+      xbt_die("update an invalide link (update energy)");
+    }
+  }
+  XBT_DEBUG("durUsage: %f", durUsage);
+  /*
+    while ((var = get_constraint()->get_variable(&elem))) {
+    auto* action = static_cast<CpuCas01Action*>(var->get_id());
+
+    get_model()->get_maxmin_system()->update_variable_bound(action->get_variable(),
+                                                            action->requested_core() * speed_.scale * speed_.peak);
+  }
+  */
+
+/*  double durUsage = 0;
 
   if (actionWifi.get_src_link() == link_->get_impl())
     durUsage = action.get_variable()->get_value()/wifi_link->get_host_rate(&action.get_src());
@@ -124,7 +157,7 @@ void LinkEnergyWifi::update(const simgrid::kernel::resource::NetworkAction& acti
     durUsage = action.get_variable()->get_value()/wifi_link->get_host_rate(&action.get_dst());
   else{
     xbt_die("update an invalide link (update energy)");
-  }
+  }*/
 
   // control cost
   eDyn_+=duration*controlDuration_*wifi_link->get_nb_hosts_on_link()*pRx_;
@@ -144,6 +177,7 @@ void LinkEnergyWifi::update(const simgrid::kernel::resource::NetworkAction& acti
     eStat_ += duration * pIdle_ * (wifi_link->get_nb_hosts_on_link()+1);
     XBT_DEBUG("eStat_ += %f * %f * (%d+1) | eStat = %f", duration, pIdle_, wifi_link->get_nb_hosts_on_link(), eStat_);
   }
+  
 }
 
 void LinkEnergyWifi::init_watts_range_list()
