@@ -8,6 +8,7 @@
 #include "src/surf/surf_interface.hpp"
 #include "surf/surf.hpp"
 #include "src/kernel/lmm/maxmin.hpp"
+#include "xbt/config.hpp"
 
 #include <boost/algorithm/string/classification.hpp>
 #include <boost/algorithm/string/split.hpp>
@@ -52,16 +53,21 @@ public:
   double getEstat(void) {return eStat_; }
   double getDurTxRx(void){return durTxRx;}
   double getDurIdle(void){return durIdle;}
-
+  
   /* Setters */
   void setpIdle(double value) { pIdle_ = value; }
   void setpTx(double value) { pTx_ = value; }
   void setpRx(double value) { pRx_ = value; }
   void setpSleep(double value) { pSleep_ = value; }
+  void setBeacons(bool val){beacons=val;}
+  
   
 private:
   s4u::Link* link_{};
 
+  // boolean to know if we compute the energy of beacons or not
+  bool beacons{true};
+  
   // dynamic energy (ns3 comparison)
   double eDyn_{0.0};
   
@@ -97,12 +103,17 @@ void LinkEnergyWifi::updateDestroy() {
 
   durIdle+=duration;
   eStat_ += duration * pIdle_ * (wifi_link->get_nb_hosts_on_link()+1);
+
+  // control cost
+  if(beacons) {
+    eDyn_+=duration*controlDuration_*wifi_link->get_nb_hosts_on_link()*pRx_;
+  }
+  
   XBT_DEBUG("finish eStat_ += %f * %f * (%d+1) | eStat = %f", duration, pIdle_, wifi_link->get_nb_hosts_on_link(), eStat_);
 }
 
 void LinkEnergyWifi::update(const simgrid::kernel::resource::NetworkAction& action) {
 
-  const simgrid::kernel::resource::NetworkWifiAction& actionWifi = dynamic_cast<const simgrid::kernel::resource::NetworkWifiAction&>(action);
   init_watts_range_list();
   //XBT_DEBUG("state updated for link %s, usage: %f, lat:%f" /*, state:%d, started: %f finished: %f"*/,
   //          link_->get_cname(), link_->get_usage(), link_->get_latency()
@@ -122,22 +133,34 @@ void LinkEnergyWifi::update(const simgrid::kernel::resource::NetworkAction& acti
       static_cast<simgrid::kernel::resource::NetworkWifiLink*>(link_->get_impl());
   
   //sum_{actions du lien} action->get_variable()/wifi_link->get_host_rate(dst)
-  const kernel::lmm::Variable* var;
-  const kernel::lmm::Element* elem = nullptr;
+  //const kernel::lmm::Variable* var;
+  //const kernel::lmm::Element* elem = nullptr;
   double durUsage = 0;
   
-  while((var = wifi_link->get_constraint()->get_variable(&elem))) {
+  //const simgrid::kernel::resource::NetworkWifiAction& actionWifi = dynamic_cast<const simgrid::kernel::resource::NetworkWifiAction&>(action);
+  //if (actionWifi.get_src_link() == link_->get_impl())
+  if(action.get_variable()->get_value()!=0)
+      durUsage += action.get_cost() / action.get_variable()->get_value();
+  //else if (actionWifi.get_dst_link() == link_->get_impl())
+  //    durUsage += action.get_cost() / action.get_variable()->get_value();
+  /*while((var = wifi_link->get_constraint()->get_variable(&elem))) {
     auto* action = static_cast<kernel::resource::NetworkWifiAction*>(var->get_id());
-    //XBT_DEBUG("action value: %f", action->get_last_value());
+    XBT_DEBUG("cost: %f action value: %f link rate 1: %f link rate 2: %f", action->get_cost(), action->get_variable()->get_value(), wifi_link->get_host_rate(&action->get_src()),wifi_link->get_host_rate(&action->get_dst()));
     action->get_variable();
-
     if (actionWifi.get_src_link() == link_->get_impl())
-      durUsage += action->get_variable()->get_value()/wifi_link->get_host_rate(&action->get_src());
+      durUsage += action->get_cost() / action->get_variable()->get_value();
+      //durUsage += action->get_variable()->get_value()/wifi_link->get_host_rate(&action->get_src());
     else if (actionWifi.get_dst_link() == link_->get_impl())
-      durUsage += action->get_variable()->get_value()/wifi_link->get_host_rate(&action->get_dst());
+      durUsage += action->get_cost() / action->get_variable()->get_value();
+      //durUsage += action->get_variable()->get_value()/wifi_link->get_host_rate(&action->get_dst());
     else{
       xbt_die("update an invalide link (update energy)");
     }
+  }*/
+
+  if(kernel::resource::NetworkModel::cfg_crosstraffic) {
+    XBT_DEBUG("Cross traffic activated, divide dirUsage by 2 %f -> %f", durUsage, durUsage/2);
+    durUsage/=2;
   }
   XBT_DEBUG("durUsage: %f", durUsage);
   /*
@@ -160,8 +183,9 @@ void LinkEnergyWifi::update(const simgrid::kernel::resource::NetworkAction& acti
   }*/
 
   // control cost
-  eDyn_+=duration*controlDuration_*wifi_link->get_nb_hosts_on_link()*pRx_;
-
+  if(beacons) {
+    eDyn_+=duration*controlDuration_*wifi_link->get_nb_hosts_on_link()*pRx_;
+  }
   /**
    * As in ns3:
    *  - if tx or rx (dyn consumption) i.e. get_usage > 0 -> Pdyn+=duration*(get_nb_hosts_on_link*pRx + 1*pTx)
@@ -169,8 +193,9 @@ void LinkEnergyWifi::update(const simgrid::kernel::resource::NetworkAction& acti
    * Ptot = Pdyn+Pstat
    */
   if(link_->get_usage()){
-    eDyn_ += duration * durUsage * ((wifi_link->get_nb_hosts_on_link()*pRx_)+pTx_);
-    XBT_DEBUG("eDyn += %f * %f * ((%d * %f) + %f) | eDyn = %f (durusage =%f)", duration, durUsage, wifi_link->get_nb_hosts_on_link(), pRx_, pTx_, eDyn_, durUsage);
+    eDyn_ += /*duration * */durUsage * ((wifi_link->get_nb_hosts_on_link()*pRx_)+pTx_);
+    eStat_ += (duration-durUsage)* pIdle_ * (wifi_link->get_nb_hosts_on_link()+1);
+    XBT_DEBUG("eDyn +=  %f * ((%d * %f) + %f) | eDyn = %f (durusage =%f)", durUsage, wifi_link->get_nb_hosts_on_link(), pRx_, pTx_, eDyn_, durUsage);
     durTxRx+=duration;
   }else{
     durIdle+=duration;
@@ -186,44 +211,53 @@ void LinkEnergyWifi::init_watts_range_list()
     return;
   valuesInit_                      = true;
   const char* all_power_values_str = this->link_->get_property("wifi_watt_values");
-  if (all_power_values_str == nullptr)
-    return;
+  const char* compute_beacons = this->link_->get_property("beacons");
 
-  std::vector<std::string> all_power_values;
-  boost::split(all_power_values, all_power_values_str, boost::is_any_of(","));
+  if(compute_beacons != nullptr && strcmp(compute_beacons, "false")==0) {
+    setBeacons(false);
+    XBT_INFO("Not computing the energy consumption of beacons");
+  }else {
+    XBT_INFO("Computing the energy consumption of beacons");
+  }
 
-  for (auto current_power_values_str : all_power_values) {
-    /* retrieve the power values associated */
-    std::vector<std::string> current_power_values;
-    boost::split(current_power_values, current_power_values_str, boost::is_any_of(":"));
-    xbt_assert(current_power_values.size() == 4,
-               "Power properties incorrectly defined - could not retrieve idle, Tx, Rx, Sleep power values for link %s",
-               this->link_->get_cname());
+  if (all_power_values_str != nullptr)
+  {
+    std::vector<std::string> all_power_values;
+    boost::split(all_power_values, all_power_values_str, boost::is_any_of(","));
 
-    /* min_power corresponds to the idle power (link load = 0) */
-    /* max_power is the power consumed at 100% link load       */
-    try {
-      pSleep_ = std::stod(current_power_values.at(3));
-    } catch (const std::invalid_argument&) {
-      throw std::invalid_argument(std::string("Invalid idle power value for link ") + this->link_->get_cname());
-    }
-    try {
-      pRx_ = std::stod(current_power_values.at(2));
-    } catch (const std::invalid_argument&) {
-      throw std::invalid_argument(std::string("Invalid idle power value for link ") + this->link_->get_cname());
-    }
-    try {
-      pTx_ = std::stod(current_power_values.at(1));
-    } catch (const std::invalid_argument&) {
-      throw std::invalid_argument(std::string("Invalid idle power value for link ") + this->link_->get_cname());
-    }
-    try {
-      pIdle_ = std::stod(current_power_values.at(0));
-    } catch (const std::invalid_argument&) {
-      throw std::invalid_argument(std::string("Invalid busy power value for link ") + this->link_->get_cname());
-    }
+    for (auto current_power_values_str : all_power_values) {
+      /* retrieve the power values associated */
+      std::vector<std::string> current_power_values;
+      boost::split(current_power_values, current_power_values_str, boost::is_any_of(":"));
+      xbt_assert(current_power_values.size() == 4,
+                "Power properties incorrectly defined - could not retrieve idle, Tx, Rx, Sleep power values for link %s",
+                this->link_->get_cname());
 
-    XBT_DEBUG("Values initialized with: pSleep=%f pIdle=%f pTx=%f pRx=%f", pSleep_, pIdle_, pTx_, pRx_);
+      /* min_power corresponds to the idle power (link load = 0) */
+      /* max_power is the power consumed at 100% link load       */
+      try {
+        pSleep_ = std::stod(current_power_values.at(3));
+      } catch (const std::invalid_argument&) {
+        throw std::invalid_argument(std::string("Invalid idle power value for link ") + this->link_->get_cname());
+      }
+      try {
+        pRx_ = std::stod(current_power_values.at(2));
+      } catch (const std::invalid_argument&) {
+        throw std::invalid_argument(std::string("Invalid idle power value for link ") + this->link_->get_cname());
+      }
+      try {
+        pTx_ = std::stod(current_power_values.at(1));
+      } catch (const std::invalid_argument&) {
+        throw std::invalid_argument(std::string("Invalid idle power value for link ") + this->link_->get_cname());
+      }
+      try {
+        pIdle_ = std::stod(current_power_values.at(0));
+      } catch (const std::invalid_argument&) {
+        throw std::invalid_argument(std::string("Invalid busy power value for link ") + this->link_->get_cname());
+      }
+
+      XBT_DEBUG("Values aa initialized with: pSleep=%f pIdle=%f pTx=%f pRx=%f", pSleep_, pIdle_, pTx_, pRx_);
+    }
   }
 }
 

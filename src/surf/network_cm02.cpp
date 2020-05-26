@@ -288,6 +288,7 @@ Action* NetworkCm02Model::communicate(s4u::Host* src, s4u::Host* dst, double siz
     for (auto const& link : back_route)
       if (link->get_sharing_policy() != s4u::Link::SharingPolicy::WIFI)
         get_maxmin_system()->expand(link->get_constraint(), action->get_variable(), .05);
+    
     // Change concurrency_share here, if you want that cross-traffic is included in the SURF concurrency
     // (You would also have to change simgrid::kernel::lmm::Element::get_concurrency())
     // action->getVariable()->set_concurrency_share(2)
