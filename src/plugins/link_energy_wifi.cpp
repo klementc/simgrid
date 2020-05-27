@@ -63,6 +63,9 @@ public:
   
   
 private:
+  // associative array keeping what has already been sent for a given action (required for interleaved actions for now)
+  std::map<simgrid::kernel::resource::NetworkWifiAction *, std::pair<int, double>> flowTmp{};
+
   s4u::Link* link_{};
 
   // boolean to know if we compute the energy of beacons or not
@@ -133,30 +136,65 @@ void LinkEnergyWifi::update(const simgrid::kernel::resource::NetworkAction& acti
       static_cast<simgrid::kernel::resource::NetworkWifiLink*>(link_->get_impl());
   
   //sum_{actions du lien} action->get_variable()/wifi_link->get_host_rate(dst)
-  //const kernel::lmm::Variable* var;
-  //const kernel::lmm::Element* elem = nullptr;
+  const kernel::lmm::Variable* var;
+  const kernel::lmm::Element* elem = nullptr;
+
   double durUsage = 0;
-  
-  //const simgrid::kernel::resource::NetworkWifiAction& actionWifi = dynamic_cast<const simgrid::kernel::resource::NetworkWifiAction&>(action);
-  //if (actionWifi.get_src_link() == link_->get_impl())
-  if(action.get_variable()->get_value()!=0)
-      durUsage += action.get_cost() / action.get_variable()->get_value();
-  //else if (actionWifi.get_dst_link() == link_->get_impl())
-  //    durUsage += action.get_cost() / action.get_variable()->get_value();
-  /*while((var = wifi_link->get_constraint()->get_variable(&elem))) {
+  while((var = wifi_link->get_constraint()->get_variable(&elem))) {
     auto* action = static_cast<kernel::resource::NetworkWifiAction*>(var->get_id());
     XBT_DEBUG("cost: %f action value: %f link rate 1: %f link rate 2: %f", action->get_cost(), action->get_variable()->get_value(), wifi_link->get_host_rate(&action->get_src()),wifi_link->get_host_rate(&action->get_dst()));
     action->get_variable();
-    if (actionWifi.get_src_link() == link_->get_impl())
-      durUsage += action->get_cost() / action->get_variable()->get_value();
-      //durUsage += action->get_variable()->get_value()/wifi_link->get_host_rate(&action->get_src());
-    else if (actionWifi.get_dst_link() == link_->get_impl())
-      durUsage += action->get_cost() / action->get_variable()->get_value();
-      //durUsage += action->get_variable()->get_value()/wifi_link->get_host_rate(&action->get_dst());
-    else{
-      xbt_die("update an invalide link (update energy)");
+    
+    double du = 0;
+
+    if(action->get_variable()->get_value()) {
+      std::map<simgrid::kernel::resource::NetworkWifiAction *, std::pair<int, double>>::iterator it;
+      it = flowTmp.find(action);
+      
+      if(it == flowTmp.end()){
+        flowTmp[action] = std::pair<int,double>(0, action->get_start_time());
+      }
+
+      it = flowTmp.find(action);
+      int lsize = it->second.first;
+      double ltime = it->second.second;
+
+      du = (action->get_cost()-it->second.first) / action->get_variable()->get_value();
+
+      XBT_DEBUG("action from array: %d %f durU: %f (cost:%f value: %f) acfst: %d acsnd:%f", lsize, ltime, du,  action->get_cost(), action->get_variable()->get_value(), it->second.first, it->second.second );
+
+      if(du > surf_get_clock()-it->second.second) {
+        XBT_DEBUG("%f -> %f", du, surf_get_clock()-it->second.second);
+        du = surf_get_clock()-it->second.second;
+      }
+      XBT_DEBUG("Durusage: %f du: %f", durUsage, du);
+      if(du > durUsage) {
+        XBT_DEBUG("DurUsage new value!: %f", du);
+        durUsage = du;
+      }
+
+      it->second.first += du*action->get_variable()->get_value();
+      it->second.second =  surf_get_clock();
+
+      if(it->second.first == action->get_cost()){
+        flowTmp.erase (it);
+      }
+      /*
+      if(! dans table)
+        mettre dedans
+      
+      du = action.get_cost()-table.size / action.get_variable()->get_value()
+      si du > now-table.last
+        du = now-last
+      si du > durUsage
+        durusage=du
+
+      mettre a jour:
+        table.size += du*debit
+        table.last = now
+        */
     }
-  }*/
+  }
 
   if(kernel::resource::NetworkModel::cfg_crosstraffic) {
     XBT_DEBUG("Cross traffic activated, divide dirUsage by 2 %f -> %f", durUsage, durUsage/2);
@@ -192,6 +230,7 @@ void LinkEnergyWifi::update(const simgrid::kernel::resource::NetworkAction& acti
    *  - if idle i.e. get_usage = 0 -> Pstat+=pIdle*get_nb_hosts_on_link*durarion
    * Ptot = Pdyn+Pstat
    */
+
   if(link_->get_usage()){
     eDyn_ += /*duration * */durUsage * ((wifi_link->get_nb_hosts_on_link()*pRx_)+pTx_);
     eStat_ += (duration-durUsage)* pIdle_ * (wifi_link->get_nb_hosts_on_link()+1);
