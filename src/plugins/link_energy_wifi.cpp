@@ -88,8 +88,8 @@ private:
   double pSleep_{0.10};
 
   // constant taking beacons into account
-  const double controlDuration_{0.00186754873};
-
+  //const double controlDuration_{0.00186754873};
+  const double controlDuration_{0.0036};
   // DIY crap
   double durTxRx{0};
   double durIdle{0};
@@ -105,22 +105,21 @@ void LinkEnergyWifi::updateDestroy() {
   prev_update_    = surf_get_clock();
 
   durIdle+=duration;
-  eStat_ += duration * pIdle_ * (wifi_link->get_nb_hosts_on_link()+1);
 
   // control cost
   if(beacons) {
     eDyn_+=duration*controlDuration_*wifi_link->get_nb_hosts_on_link()*pRx_;
+     eStat_ += (duration-(duration*controlDuration_)) * pIdle_ * (wifi_link->get_nb_hosts_on_link()+1);
+  }else{
+    eStat_ += duration * pIdle_ * (wifi_link->get_nb_hosts_on_link()+1);
   }
   
   XBT_DEBUG("finish eStat_ += %f * %f * (%d+1) | eStat = %f", duration, pIdle_, wifi_link->get_nb_hosts_on_link(), eStat_);
 }
 
 void LinkEnergyWifi::update(const simgrid::kernel::resource::NetworkAction& action) {
-
+  bool finishedAFlow = false;
   init_watts_range_list();
-  //XBT_DEBUG("state updated for link %s, usage: %f, lat:%f" /*, state:%d, started: %f finished: %f"*/,
-  //          link_->get_cname(), link_->get_usage(), link_->get_latency()
-  //         /*action.get_state(),action.get_start_time(),action.get_finish_time()*/);
 
   double duration = surf_get_clock() - prev_update_;
   prev_update_    = surf_get_clock();
@@ -130,7 +129,6 @@ void LinkEnergyWifi::update(const simgrid::kernel::resource::NetworkAction& acti
     XBT_DEBUG("duration equals to 0, leaving update");
     return;
   }
-  //XBT_INFO("duration different than 0, continue update");
 
   simgrid::kernel::resource::NetworkWifiLink* wifi_link =
       static_cast<simgrid::kernel::resource::NetworkWifiLink*>(link_->get_impl());
@@ -146,9 +144,9 @@ void LinkEnergyWifi::update(const simgrid::kernel::resource::NetworkAction& acti
     action->get_variable();
     
     double du = 0;
+    std::map<simgrid::kernel::resource::NetworkWifiAction *, std::pair<int, double>>::iterator it;
 
     if(action->get_variable()->get_value()) {
-      std::map<simgrid::kernel::resource::NetworkWifiAction *, std::pair<int, double>>::iterator it;
       it = flowTmp.find(action);
       
       if(it == flowTmp.end()){
@@ -172,11 +170,14 @@ void LinkEnergyWifi::update(const simgrid::kernel::resource::NetworkAction& acti
         XBT_DEBUG("DurUsage new value!: %f", du);
         durUsage = du;
       }
+      if(action->get_finish_time() ==  surf_get_clock()){
+        finishedAFlow = true;
+      }
 
       it->second.first += du*action->get_variable()->get_value();
       it->second.second =  surf_get_clock();
 
-      if(it->second.first == action->get_cost()){
+      if(it->second.first >= action->get_cost()){
         flowTmp.erase (it);
       }
       /*
@@ -201,24 +202,6 @@ void LinkEnergyWifi::update(const simgrid::kernel::resource::NetworkAction& acti
     durUsage/=2;
   }
   XBT_DEBUG("durUsage: %f", durUsage);
-  /*
-    while ((var = get_constraint()->get_variable(&elem))) {
-    auto* action = static_cast<CpuCas01Action*>(var->get_id());
-
-    get_model()->get_maxmin_system()->update_variable_bound(action->get_variable(),
-                                                            action->requested_core() * speed_.scale * speed_.peak);
-  }
-  */
-
-/*  double durUsage = 0;
-
-  if (actionWifi.get_src_link() == link_->get_impl())
-    durUsage = action.get_variable()->get_value()/wifi_link->get_host_rate(&action.get_src());
-  else if (actionWifi.get_dst_link() == link_->get_impl())
-    durUsage = action.get_variable()->get_value()/wifi_link->get_host_rate(&action.get_dst());
-  else{
-    xbt_die("update an invalide link (update energy)");
-  }*/
 
   // control cost
   if(beacons) {
@@ -232,13 +215,20 @@ void LinkEnergyWifi::update(const simgrid::kernel::resource::NetworkAction& acti
    */
 
   if(link_->get_usage()){
+    // mimic cross-traffic
+    if(finishedAFlow && beacons){}
+
     eDyn_ += /*duration * */durUsage * ((wifi_link->get_nb_hosts_on_link()*pRx_)+pTx_);
     eStat_ += (duration-durUsage)* pIdle_ * (wifi_link->get_nb_hosts_on_link()+1);
     XBT_DEBUG("eDyn +=  %f * ((%d * %f) + %f) | eDyn = %f (durusage =%f)", durUsage, wifi_link->get_nb_hosts_on_link(), pRx_, pTx_, eDyn_, durUsage);
     durTxRx+=duration;
   }else{
     durIdle+=duration;
-    eStat_ += duration * pIdle_ * (wifi_link->get_nb_hosts_on_link()+1);
+    if(beacons){
+      eStat_ += (duration-(duration*controlDuration_)) * pIdle_ * (wifi_link->get_nb_hosts_on_link()+1);
+    }else{
+      eStat_ += duration * pIdle_ * (wifi_link->get_nb_hosts_on_link()+1);
+    }
     XBT_DEBUG("eStat_ += %f * %f * (%d+1) | eStat = %f", duration, pIdle_, wifi_link->get_nb_hosts_on_link(), eStat_);
   }
   
