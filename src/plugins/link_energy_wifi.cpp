@@ -1,3 +1,8 @@
+/* Copyright (c) 2017-2020. The SimGrid Team. All rights reserved.          */
+
+/* This program is free software; you can redistribute it and/or modify it
+ * under the terms of the license (GNU LGPL) which comes with this package. */
+
 #include "simgrid/Exception.hpp"
 #include "simgrid/plugins/energy.h"
 #include "simgrid/s4u/Engine.hpp"
@@ -14,6 +19,10 @@
 #include <boost/algorithm/string/split.hpp>
 
 SIMGRID_REGISTER_PLUGIN(link_energy_wifi, "Energy wifi test", &sg_link_wifi_plugin_init);
+/** @degroup plugin_link_energy_wifi Plugin WiFi energy
+ * 
+ * This is the WiFi energy plugin, accounting for the dissipated energy of WiFi links.
+ */
 
 XBT_LOG_NEW_DEFAULT_SUBCATEGORY(link_energy_wifi, surf, "Logging specific to the link energy wifi plugin");
 
@@ -31,19 +40,22 @@ public:
   LinkEnergyWifi()  = delete;
 
   /**
-   * Update the energy consumed by the link
-   * (called when a communication happens)
+   * Update the energy consumed by link_ when transmissions start or end
    */
   void update(const simgrid::kernel::resource::NetworkAction &);
   
   /**
-   * Update the idle energy when the link is destroyed
-   * (required to count the energy consumed between the last communication and the link's destruction)
+   * Update the energy consumed when link_ is destroyed
    */
   void updateDestroy();
 
   /**
-   * Fetches energy consumption values from the platform file
+   * Fetches energy consumption values from the platform file.
+   * The user can specify:
+   *  - wifi_watt_values: energy consumption in each state (IDLE:Tx:Rx:SLEEP)
+   *      default: 0.82:1.14:0.94:0.10
+   *  - controlDuration: duration of active beacon transmissions per second
+   *      default: 0.0036
    */
   void init_watts_range_list();
 
@@ -59,25 +71,21 @@ public:
   void setpTx(double value) { pTx_ = value; }
   void setpRx(double value) { pRx_ = value; }
   void setpSleep(double value) { pSleep_ = value; }
-  void setBeacons(bool val){beacons=val;}
   
   
 private:
-  // associative array keeping what has already been sent for a given action (required for interleaved actions for now)
+  // associative array keeping what has already been sent for a given action (required for interleaved actions)
   std::map<simgrid::kernel::resource::NetworkWifiAction *, std::pair<int, double>> flowTmp{};
 
+  // WiFi link the plugin instance is attached to
   s4u::Link* link_{};
-
-  // boolean to know if we compute the energy of beacons or not
-  bool beacons{true};
   
-  // dynamic energy (ns3 comparison)
+  // dynamic energy (active durations consumption)
   double eDyn_{0.0};
-  
-  // static energy (ns3 comparison)
+  // static energy (no activity consumption)
   double eStat_{0.0};
 
-  // duration since last energy update
+  // duration since previous energy update
   double prev_update_{0.0};
 
   // Same energy calibration values as ns3 by default
@@ -88,9 +96,9 @@ private:
   double pSleep_{0.10};
 
   // constant taking beacons into account
-  //const double controlDuration_{0.00186754873};
-  const double controlDuration_{0.0036};
-  // DIY crap
+  double controlDuration_{0.0036};
+
+  // Measurements for report
   double durTxRx{0};
   double durIdle{0};
   bool valuesInit_{false};
@@ -106,14 +114,10 @@ void LinkEnergyWifi::updateDestroy() {
 
   durIdle+=duration;
 
-  // control cost
-  if(beacons) {
-    eDyn_+=duration*controlDuration_*wifi_link->get_nb_hosts_on_link()*pRx_;
-     eStat_ += (duration-(duration*controlDuration_)) * pIdle_ * (wifi_link->get_nb_hosts_on_link()+1);
-  }else{
-    eStat_ += duration * pIdle_ * (wifi_link->get_nb_hosts_on_link()+1);
-  }
-  
+  // add IDLE energy usage, as well as beacons cost
+  eDyn_+=duration*controlDuration_*wifi_link->get_nb_hosts_on_link()*pRx_;
+  eStat_ += (duration-(duration*controlDuration_)) * pIdle_ * (wifi_link->get_nb_hosts_on_link()+1);
+
   XBT_DEBUG("finish eStat_ += %f * %f * (%d+1) | eStat = %f", duration, pIdle_, wifi_link->get_nb_hosts_on_link(), eStat_);
 }
 
@@ -124,7 +128,6 @@ void LinkEnergyWifi::update(const simgrid::kernel::resource::NetworkAction& acti
   double duration = surf_get_clock() - prev_update_;
   prev_update_    = surf_get_clock();
 
-  // todo epsilon
   if(duration < 1e-6) {
     XBT_DEBUG("duration equals to 0, leaving update");
     return;
@@ -204,9 +207,7 @@ void LinkEnergyWifi::update(const simgrid::kernel::resource::NetworkAction& acti
   XBT_DEBUG("durUsage: %f", durUsage);
 
   // control cost
-  if(beacons) {
-    eDyn_+=duration*controlDuration_*wifi_link->get_nb_hosts_on_link()*pRx_;
-  }
+  eDyn_+=duration*controlDuration_*wifi_link->get_nb_hosts_on_link()*pRx_;
   /**
    * As in ns3:
    *  - if tx or rx (dyn consumption) i.e. get_usage > 0 -> Pdyn+=duration*(get_nb_hosts_on_link*pRx + 1*pTx)
@@ -215,39 +216,40 @@ void LinkEnergyWifi::update(const simgrid::kernel::resource::NetworkAction& acti
    */
 
   if(link_->get_usage()){
-    // mimic cross-traffic
-    if(finishedAFlow && beacons){}
-
     eDyn_ += /*duration * */durUsage * ((wifi_link->get_nb_hosts_on_link()*pRx_)+pTx_);
     eStat_ += (duration-durUsage)* pIdle_ * (wifi_link->get_nb_hosts_on_link()+1);
     XBT_DEBUG("eDyn +=  %f * ((%d * %f) + %f) | eDyn = %f (durusage =%f)", durUsage, wifi_link->get_nb_hosts_on_link(), pRx_, pTx_, eDyn_, durUsage);
     durTxRx+=duration;
   }else{
     durIdle+=duration;
-    if(beacons){
-      eStat_ += (duration-(duration*controlDuration_)) * pIdle_ * (wifi_link->get_nb_hosts_on_link()+1);
-    }else{
-      eStat_ += duration * pIdle_ * (wifi_link->get_nb_hosts_on_link()+1);
-    }
-    XBT_DEBUG("eStat_ += %f * %f * (%d+1) | eStat = %f", duration, pIdle_, wifi_link->get_nb_hosts_on_link(), eStat_);
+    eStat_ += (duration-(duration*controlDuration_)) * pIdle_ * (wifi_link->get_nb_hosts_on_link()+1);
   }
-  
+
+  XBT_DEBUG("eStat_ += %f * %f * (%d+1) | eStat = %f", duration, pIdle_, wifi_link->get_nb_hosts_on_link(), eStat_);
 }
+  
+
 
 void LinkEnergyWifi::init_watts_range_list()
 {
   if (valuesInit_)
     return;
   valuesInit_                      = true;
-  const char* all_power_values_str = this->link_->get_property("wifi_watt_values");
-  const char* compute_beacons = this->link_->get_property("beacons");
 
-  if(compute_beacons != nullptr && strcmp(compute_beacons, "false")==0) {
-    setBeacons(false);
-    XBT_INFO("Not computing the energy consumption of beacons");
-  }else {
-    XBT_INFO("Computing the energy consumption of beacons");
+  /* beacons factor
+  Set to 0 if you do not want to compute beacons,
+  otherwise to the duration of beacons transmissions per second
+  */
+  const char* beacons_factor = this->link_->get_property("controlDuration");
+  if(beacons_factor != nullptr) {
+    try {
+      controlDuration_ = std::stod(beacons_factor);
+    } catch (const std::invalid_argument&) {
+      throw std::invalid_argument(std::string("Invalid beacons factor value for link ") + this->link_->get_cname());
+    }
   }
+
+  const char* all_power_values_str = this->link_->get_property("wifi_watt_values");
 
   if (all_power_values_str != nullptr)
   {
