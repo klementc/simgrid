@@ -18,7 +18,7 @@
 #include <boost/algorithm/string/classification.hpp>
 #include <boost/algorithm/string/split.hpp>
 
-SIMGRID_REGISTER_PLUGIN(link_energy_wifi, "Energy wifi test", &sg_link_wifi_plugin_init);
+SIMGRID_REGISTER_PLUGIN(link_energy_wifi, "Energy wifi test", &sg_wifi_energy_plugin_init);
 /** @degroup plugin_link_energy_wifi Plugin WiFi energy
  * 
  * This is the WiFi energy plugin, accounting for the dissipated energy of WiFi links.
@@ -185,10 +185,6 @@ void LinkEnergyWifi::update(const simgrid::kernel::resource::NetworkAction& acti
     }
   }
 
-  if(kernel::resource::NetworkModel::cfg_crosstraffic) {
-    XBT_DEBUG("Cross traffic activated, divide dirUsage by 2 %f -> %f", durUsage, durUsage/2);
-    durUsage/=2;
-  }
   XBT_DEBUG("durUsage: %f", durUsage);
 
   // beacons cost
@@ -281,7 +277,7 @@ void LinkEnergyWifi::init_watts_range_list()
 
 using simgrid::plugin::LinkEnergyWifi;
 
-void sg_link_wifi_plugin_init()
+void sg_wifi_energy_plugin_init()
 {
   XBT_DEBUG("Initialization wifi_energy plugin");
 

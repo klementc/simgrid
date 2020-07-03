@@ -26,7 +26,7 @@ XBT_PUBLIC double sg_link_get_consumed_energy(const_sg_link_t link);
 
 XBT_PUBLIC int sg_link_energy_is_inited();
 
-XBT_PUBLIC void sg_link_wifi_plugin_init();
+XBT_PUBLIC void sg_wifi_energy_plugin_init();
 
 #define MSG_host_energy_plugin_init() sg_host_energy_plugin_init()
 #define MSG_host_get_consumed_energy(host) sg_host_get_consumed_energy(host)
